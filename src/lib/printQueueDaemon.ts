@@ -1,11 +1,10 @@
 ﻿/**
- * PrintQueueDaemon — single-flight Bluetooth drain for kitchen + receipt.
- * Receipt priority; MAC cooldowns via bluetoothCoordinator; watchdog self-heal.
+ * PrintQueueDaemon — single-flight Bluetooth drain for Caisse receipts.
+ * Single-printer profile; MAC cooldown via bluetoothCoordinator; watchdog self-heal.
  */
 
 import { toast } from "sonner";
 import {
-  KitchenAbortedError,
   forceResetRadioState,
   getLastIoProgressAt,
   hardSettleRadio,
@@ -14,17 +13,12 @@ import {
   touchIoProgress,
   BT_OP_TIMEOUT_MS,
 } from "@/lib/bluetoothRadio";
-import {
-  runProductionKitchen,
-  runProductionReceipt,
-} from "@/lib/bluetoothCoordinator";
+import { runProductionReceipt } from "@/lib/bluetoothCoordinator";
 import { base64ToUint8 } from "@/lib/escposTickets";
 import {
+  cancelLegacyKitchenJobs,
   claimNextPrintJob,
-  enqueueConsolKitchenJob,
-  hasPendingReceiptJob,
   markPrintJobDone,
-  patchOrderKitchenFingerprints,
   reclaimPrintingJobsForThisDevice,
   reclaimStalePrintingJobs,
   requeueInterruptedJob,
@@ -32,7 +26,6 @@ import {
   RECEIPT_RETRY_BACKOFF_MS,
   type PrintJob,
 } from "@/lib/kitchenPrintQueue";
-import { getPrintersFromStore } from "@/lib/printerStore";
 import { getLocalPrintDeviceId } from "@/lib/printDevice";
 import { isLocalDevicePrimaryHub } from "@/lib/printSettingsStore";
 import { logPrintActivity, updatePrintActivity } from "@/lib/printActivityLog";
@@ -46,8 +39,6 @@ export const WATCHDOG_MARGIN_MS = 5000;
 const WATCHDOG_POLL_MS = 1000;
 
 let draining = false;
-let currentKitchenJobId: string | null = null;
-let kitchenAbort: AbortController | null = null;
 let wakeDrain: (() => void) | null = null;
 /** Ensures only one drain loop exists (React remount / hub flip). */
 let stopActiveDaemon: (() => void) | null = null;
@@ -58,69 +49,25 @@ function notifyDrain() {
 
 /** Called when a new pending job arrives (realtime). */
 export function wakePrintQueueDaemon() {
-  // Phase 1: native worker owns drain — only wake native + skip JS BT.
   if (isNativePrintWorkerActive()) {
     void wakeNativePrintWorker();
     return;
   }
   notifyDrain();
-  // If kitchen mid-print and receipt pending → abort kitchen for receipt priority
-  void (async () => {
-    if (!currentKitchenJobId || !kitchenAbort) return;
-    if (await hasPendingReceiptJob()) {
-      console.log(
-        "[PRINT DAEMON] Receipt pending — aborting kitchen job",
-        currentKitchenJobId,
-      );
-      markRadioNeedsSettle(`wake-abort:${currentKitchenJobId}`);
-      kitchenAbort.abort();
-    }
-  })();
 }
 
-async function sendJobBytes(
-  job: PrintJob,
-  data: Uint8Array,
-): Promise<"ok" | "aborted"> {
+async function sendJobBytes(job: PrintJob, data: Uint8Array): Promise<"ok"> {
   const mac = (job.mac_address ?? "").trim();
   const name = job.printer_name ?? "imprimante";
   if (!mac) throw new Error("Adresse MAC manquante");
 
-  if (job.job_type === "receipt") {
-    await runProductionReceipt({
-      jobId: job.id,
-      printerName: name,
-      macAddress: mac,
-      data,
-    });
-    return "ok";
-  }
-
-  // Kitchen
-  const ac = new AbortController();
-  kitchenAbort = ac;
-  currentKitchenJobId = job.id;
-
-  try {
-    if (await hasPendingReceiptJob()) {
-      return "aborted";
-    }
-    return await runProductionKitchen({
-      jobId: job.id,
-      printerName: name,
-      macAddress: mac,
-      data,
-      abortSignal: ac.signal,
-    });
-  } catch (err) {
-    if (err instanceof KitchenAbortedError || ac.signal.aborted) {
-      return "aborted";
-    }
-    throw err;
-  } finally {
-    kitchenAbort = null;
-    currentKitchenJobId = null;
-  }
+  await runProductionReceipt({
+    jobId: job.id,
+    printerName: name,
+    macAddress: mac,
+    data,
+  });
+  return "ok";
 }
 
 /**
@@ -130,7 +77,7 @@ async function sendJobBytes(
 async function sendJobBytesWithWatchdog(
   job: PrintJob,
   data: Uint8Array,
-): Promise<"ok" | "aborted" | "watchdog"> {
+): Promise<"ok" | "watchdog"> {
   touchIoProgress(`job-start:${job.id}`);
   let settled = false;
   let watchdogFired = false;
@@ -151,24 +98,17 @@ async function sendJobBytesWithWatchdog(
         } catch (e) {
           console.warn("[PRINT DAEMON] watchdog reset failed", e);
         }
-        if (kitchenAbort) {
-          try {
-            kitchenAbort.abort();
-          } catch {
-            /* ignore */
-          }
-        }
         return;
       }
     }
   })();
 
   try {
-    const result = await sendJobBytes(job, data);
+    await sendJobBytes(job, data);
     settled = true;
     await watchdog;
     if (watchdogFired) return "watchdog";
-    return result;
+    return "ok";
   } catch (err) {
     settled = true;
     await watchdog;
@@ -177,35 +117,12 @@ async function sendJobBytesWithWatchdog(
   }
 }
 
-async function tryAutoConsol(failedJob: PrintJob): Promise<void> {
-  if (failedJob.job_type !== "kitchen") return;
-  if (failedJob.payload.consolOfJobId) return; // already a consol copy
-
-  const printers = getPrintersFromStore().filter(
-    (p) => p.enabled && p.type === "cuisine" && p.mac_address,
-  );
-  const others = printers.filter((p) => p.id !== failedJob.printer_id);
-  if (others.length === 0) return;
-
-  const preferred = others[0];
-  if (!preferred) return;
-
-  const result = await enqueueConsolKitchenJob({
-    failedJob,
-    targetPrinter: preferred,
-  });
-  if (result.status === "enqueued") {
-    console.log(
-      `[PRINT DAEMON] Auto-consol ${failedJob.printer_name} → ${preferred.name}`,
-    );
-    toast.warning(`Basculé vers ${preferred.name}`, {
-      description: `${failedJob.printer_name ?? "Station"} indisponible`,
-      duration: 5000,
-    });
-  }
-}
-
 async function processJob(job: PrintJob): Promise<void> {
+  if (job.job_type !== "receipt") {
+    await cancelLegacyKitchenJobs();
+    return;
+  }
+
   const b64 = job.payload?.escposBase64;
   if (!b64) {
     await schedulePrintJobRetry(job.id, MAX_ATTEMPTS_FORCE, "Payload ESC/POS manquant");
@@ -214,15 +131,15 @@ async function processJob(job: PrintJob): Promise<void> {
 
   const data = base64ToUint8(b64);
   const activityId = logPrintActivity({
-    kind: job.job_type === "receipt" ? "caisse" : "kitchen",
+    kind: "caisse",
     printerName: job.printer_name ?? "?",
     mac: job.mac_address,
     status: "started",
-    detail: `${job.job_type} · ${job.payload.orderLabel}`,
+    detail: `receipt · ${job.payload.orderLabel}`,
   });
 
   console.log(
-    `[PRINT DAEMON] ${job.job_type} → ${job.printer_name} (attempt ${job.attempt_count + 1})`,
+    `[PRINT DAEMON] receipt → ${job.printer_name} (attempt ${job.attempt_count + 1})`,
   );
   console.log(`[PRINT START] ${job.printer_name}`);
 
@@ -239,27 +156,9 @@ async function processJob(job: PrintJob): Promise<void> {
       wakePrintQueueDaemon();
       return;
     }
-    if (result === "aborted") {
-      updatePrintActivity(activityId, {
-        status: "error",
-        detail: "Interrompu (priorité caisse)",
-      });
-      await requeueInterruptedJob(job.id);
-      console.log(`[PRINT DAEMON] Requeued interrupted kitchen ${job.id}`);
-      // Back off while Admin probe / receipt holds exclusive radio — avoid denial spin
-      await sleep(2000);
-      return;
-    }
 
     await markPrintJobDone(job.id);
     updatePrintActivity(activityId, { status: "success", detail: "OK" });
-
-    if (job.job_type === "kitchen" && job.payload.fingerprints && job.payload.tableId) {
-      await patchOrderKitchenFingerprints(
-        job.payload.tableId,
-        job.payload.fingerprints,
-      );
-    }
     console.log(`[PRINT END] ${job.printer_name}`);
     console.log(`[PRINT DAEMON] Done ${job.id}`);
   } catch (err: unknown) {
@@ -273,20 +172,17 @@ async function processJob(job: PrintJob): Promise<void> {
     }
 
     const nextAttempt = (job.attempt_count ?? 0) + 1;
-    const backoff =
-      job.job_type === "receipt" ? RECEIPT_RETRY_BACKOFF_MS : undefined;
     const outcome = await schedulePrintJobRetry(
       job.id,
       nextAttempt,
       message,
-      backoff,
+      RECEIPT_RETRY_BACKOFF_MS,
     );
     if (outcome === "needs_manual") {
       toast.error("Ticket non imprimé", {
         description: `${job.printer_name ?? "Imprimante"}: ${message}`,
         duration: 6000,
       });
-      await tryAutoConsol(job);
     }
     console.log(`[PRINT END] ${job.printer_name}`);
   }
@@ -337,13 +233,9 @@ export function startPrintQueueDaemon(): () => void {
     let radioBootstrapped = false;
     while (!stopped) {
       if (!isLocalDevicePrimaryHub()) {
-        // Poll frequently so the daemon wakes promptly once the printSettingsStore
-        // finishes its async Supabase fetch and marks this device as primary hub.
-        // A 3s sleep here caused up to ~3s delay on the first cashier receipt.
         await waitForWake(200);
         continue;
       }
-      // Phase 1 cutover: native worker owns Bluetooth — JS drain idles.
       if (isNativePrintWorkerActive()) {
         await waitForWake(2000);
         continue;
@@ -360,7 +252,6 @@ export function startPrintQueueDaemon(): () => void {
 
       draining = true;
       try {
-        // After logout/login the BT stack is often dirty mid-connect — settle once.
         if (!radioBootstrapped) {
           radioBootstrapped = true;
           markRadioNeedsSettle("daemon-start");
@@ -369,16 +260,13 @@ export function startPrintQueueDaemon(): () => void {
           } catch {
             /* ignore */
           }
-          // Native may have taken over during settle — do not reclaim/claim.
           if (isNativePrintWorkerActive()) continue;
-          // Immediate reclaim of this device's in-flight jobs (not 2-min stale only).
+          await cancelLegacyKitchenJobs();
           await reclaimPrintingJobsForThisDevice(getLocalPrintDeviceId());
         }
         if (isNativePrintWorkerActive()) continue;
         await reclaimStalePrintingJobs(getLocalPrintDeviceId());
 
-        // Drain one job at a time (single-flight). Re-check native each claim —
-        // startWorker can finish mid-tick and must own the radio alone.
         while (
           !stopped &&
           isLocalDevicePrimaryHub() &&
@@ -387,7 +275,6 @@ export function startPrintQueueDaemon(): () => void {
           const job = await claimNextPrintJob();
           if (!job) break;
           if (isNativePrintWorkerActive()) {
-            // Race: claimed just as native took over — release without attempt++.
             await requeueInterruptedJob(job.id);
             break;
           }
@@ -399,8 +286,6 @@ export function startPrintQueueDaemon(): () => void {
         draining = false;
       }
 
-      // Empty-queue poll. Wake + pendingWake make Encaisser instant; keep this
-      // ≥1s so we do not hammer print_jobs claim (was 200ms → DB pressure).
       await waitForWake(1000);
     }
     console.log("[PRINT DAEMON] Stopped");

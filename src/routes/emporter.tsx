@@ -22,7 +22,7 @@ import { playCashSound } from "@/lib/posSounds";
 
 export const Route = createFileRoute("/emporter")({
   head: () => ({
-    meta: [{ title: "Emporter — La Vida Food" }],
+    meta: [{ title: "Emporter — Z-pekenio" }],
   }),
   component: EmporterPage,
 });

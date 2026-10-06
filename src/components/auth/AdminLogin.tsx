@@ -87,7 +87,7 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
           <div className="admin-login-icon-ring">
             <ChefHat className="admin-login-chef-icon" />
           </div>
-          <h1 className="admin-login-title">La Vida Food</h1>
+          <h1 className="admin-login-title">Z-pekenio</h1>
           <p className="admin-login-subtitle">Panneau d'administration</p>
         </div>
 
@@ -166,7 +166,7 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
         </form>
 
         <p className="admin-login-footer">
-          © {new Date().getFullYear()} La Vida Food · Système de caisse
+          © {new Date().getFullYear()} Z-pekenio · Système de caisse
         </p>
       </div>
     </div>

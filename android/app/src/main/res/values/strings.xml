@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">vida-food-caisse</string>
-    <string name="title_activity_main">vida-food-caisse</string>
+    <string name="app_name">Z-pekenio</string>
+    <string name="title_activity_main">Z-pekenio</string>
     <string name="package_name">com.marystig.vidafoodcaisse</string>
     <string name="custom_url_scheme">com.marystig.vidafoodcaisse</string>
 </resources>

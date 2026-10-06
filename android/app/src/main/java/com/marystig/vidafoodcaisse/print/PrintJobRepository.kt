@@ -14,7 +14,7 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
- * Supabase PostgREST client for print_jobs (+ kitchen fingerprint patch).
+ * Supabase PostgREST client for print_jobs (receipt-only drain).
  */
 class PrintJobRepository(
   private val baseUrl: String,
@@ -32,8 +32,8 @@ class PrintJobRepository(
 
   companion object {
     private const val TAG = "PrintJobRepo"
+    /** Single-printer profile — keep in sync with JS kitchenPrintQueue. */
     const val MAX_ATTEMPTS = 3
-    /** 2-printer profile — faster auto-recovery without storming the radio. */
     const val RETRY_BACKOFF_MS = 2500L
     const val RECEIPT_RETRY_BACKOFF_MS = 450L
   }
@@ -111,7 +111,7 @@ class PrintJobRepository(
       .put("error", "Worker restarted")
     try {
       patch(
-        "/print_jobs?status=eq.printing&claimed_by_device_id=eq.$deviceId",
+        "/print_jobs?status=eq.printing&job_type=eq.receipt&claimed_by_device_id=eq.$deviceId",
         patchBody,
       )
       Log.i(TAG, "reclaimed printing jobs for $deviceId")
@@ -131,7 +131,7 @@ class PrintJobRepository(
       .put("error", "Stale printing reclaim")
     try {
       val result = patch(
-        "/print_jobs?status=eq.printing&updated_at=lt.$cutoff",
+        "/print_jobs?status=eq.printing&job_type=eq.receipt&updated_at=lt.$cutoff",
         patchBody,
       )
       val n = try {
@@ -148,13 +148,10 @@ class PrintJobRepository(
   fun claimNext(): NativePrintJob? {
     // OkHttp HttpUrl encodes query values — pass raw ISO, do not pre-encode.
     val now = nowIso()
-    val receiptHold = hasPendingReceipt()
-    var path =
-      "/print_jobs?select=*&status=eq.pending&next_attempt_at=lte.$now" +
-        "&order=priority.desc,created_at.asc&limit=5"
-    if (receiptHold) {
-      path += "&job_type=eq.receipt"
-    }
+    cancelLegacyKitchenJobs()
+    val path =
+      "/print_jobs?select=*&status=eq.pending&job_type=eq.receipt" +
+        "&next_attempt_at=lte.$now&order=priority.desc,created_at.asc&limit=5"
     val candidates = JSONArray(get(path))
     if (candidates.length() == 0) return null
 
@@ -180,6 +177,43 @@ class PrintJobRepository(
       }
     }
     return null
+  }
+
+  /** Cancel leftover kitchen jobs so they never touch Bluetooth. */
+  fun cancelLegacyKitchenJobs() {
+    try {
+      val result = patch(
+        "/print_jobs?job_type=eq.kitchen&status=in.(pending,printing,needs_manual)",
+        JSONObject()
+          .put("status", "cancelled")
+          .put("error", "Cuisine désactivée — ticket ignoré")
+          .put("claimed_by_device_id", JSONObject.NULL)
+          .put("updated_at", nowIso()),
+      )
+      val n = try {
+        JSONArray(result).length()
+      } catch (_: Exception) {
+        0
+      }
+      if (n > 0) Log.i(TAG, "cancelled $n legacy kitchen job(s)")
+    } catch (e: Exception) {
+      Log.w(TAG, "cancel kitchen failed", e)
+    }
+  }
+
+  fun cancelJob(jobId: String, message: String) {
+    try {
+      patch(
+        "/print_jobs?id=eq.$jobId",
+        JSONObject()
+          .put("status", "cancelled")
+          .put("error", message)
+          .put("claimed_by_device_id", JSONObject.NULL)
+          .put("updated_at", nowIso()),
+      )
+    } catch (e: Exception) {
+      Log.w(TAG, "cancelJob failed", e)
+    }
   }
 
   fun markDone(jobId: String) {
@@ -241,7 +275,7 @@ class PrintJobRepository(
   fun retryAllNeedsManual(): Int {
     val now = nowIso()
     val result = patch(
-      "/print_jobs?status=eq.needs_manual",
+      "/print_jobs?status=eq.needs_manual&job_type=eq.receipt",
       JSONObject()
         .put("status", "pending")
         .put("attempt_count", 0)
@@ -265,48 +299,6 @@ class PrintJobRepository(
       )
     } catch (e: Exception) {
       Log.w(TAG, "heartbeat failed", e)
-    }
-  }
-
-  /**
-   * Patch kitchen fingerprints on table_orders.items so deltas do not reprint.
-   */
-  fun patchKitchenFingerprints(tableId: String, fingerprints: JSONObject) {
-    if (fingerprints.length() == 0) return
-    // UUID check — skip anon scopes
-    val uuidRe =
-      Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
-    if (!uuidRe.matches(tableId)) {
-      Log.i(TAG, "skip fingerprint patch — non-uuid tableId=$tableId")
-      return
-    }
-    try {
-      val body = get("/table_orders?select=table_id,items&table_id=eq.$tableId&limit=1")
-      val arr = JSONArray(body)
-      if (arr.length() == 0) return
-      val row = arr.getJSONObject(0)
-      val items = row.optJSONArray("items") ?: return
-      val printedAt = nowIso()
-      var changed = false
-      for (i in 0 until items.length()) {
-        val item = items.getJSONObject(i)
-        val itemId = item.optString("id", "")
-        if (itemId.isBlank() || !fingerprints.has(itemId)) continue
-        val fp = fingerprints.getString(itemId)
-        item.put("kitchenFingerprint", fp)
-        item.put("kitchenPrintedAt", printedAt)
-        changed = true
-      }
-      if (!changed) return
-      patch(
-        "/table_orders?table_id=eq.$tableId",
-        JSONObject()
-          .put("items", items)
-          .put("updated_at", nowIso()),
-      )
-      Log.i(TAG, "patched kitchen fingerprints for $tableId")
-    } catch (e: Exception) {
-      Log.w(TAG, "fingerprint patch failed", e)
     }
   }
 }

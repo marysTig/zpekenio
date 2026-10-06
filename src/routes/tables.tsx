@@ -25,7 +25,7 @@ import { playCashSound } from "@/lib/posSounds";
 
 export const Route = createFileRoute("/tables")({
   head: () => ({
-    meta: [{ title: "Tables — La Vida Food" }],
+    meta: [{ title: "Tables — Z-pekenio" }],
   }),
   component: TablesPage,
 });

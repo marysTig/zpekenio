@@ -15,9 +15,7 @@ import { useTableOrdersStore } from "@/lib/tableOrdersStore";
 import { useSessionStore } from "@/lib/authStore";
 import { supabase } from "@/lib/supabase";
 import { usePrinterStore } from "@/lib/printerStore";
-import { enqueueKitchenPrint } from "@/lib/kitchenPrintQueue";
 import { runCashierReceiptPrint } from "@/lib/cashierPrint";
-import { wakePrintQueueDaemon } from "@/lib/printQueueDaemon";
 import { toast } from "sonner";
 import { ComponentLoader } from "@/components/ui/PageLoader";
 import { recordZReport } from "@/lib/zReport";
@@ -177,13 +175,12 @@ type OrderListDesktopProps = {
   onNoteChange: (note: string) => void;
   onValidate: () => void;
   onCheckout: () => void;
-  onReprintKitchen?: () => void;
   onAddSupplement?: (item: CartItem) => void;
 };
 
 function OrderListDesktop({
   tableNumber, mergedNumbers, items, orderNote, itemCount, total,
-  isOccupied, isServeur, decrease, increase, remove, onNoteChange, onValidate, onCheckout, onReprintKitchen, onAddSupplement
+  isOccupied, isServeur, decrease, increase, remove, onNoteChange, onValidate, onCheckout, onAddSupplement
 }: OrderListDesktopProps) {
 
   return (
@@ -325,16 +322,6 @@ function OrderListDesktop({
                 </button>
               )}
             </div>
-            {onReprintKitchen && (
-              <button
-                type="button"
-                onClick={onReprintKitchen}
-                disabled={items.length === 0}
-                className="w-full rounded-xl border border-border bg-background py-2.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
-              >
-                Réimprimer cuisine
-              </button>
-            )}
           </div>
         ) : (
           <button
@@ -422,10 +409,6 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   // Detecter si c'est une commande A Emporter
   const emporterRoom = rooms.find(r => r.name.toLowerCase() === "emporter");
   const isEmporter = emporterRoom ? table?.roomId === emporterRoom.id : false;
-  // Label utilise pour l'impression cuisine
-  const kitchenOrderLabel: string | number = isEmporter
-    ? `EMPORTER #${tableNumber}`
-    : tableNumber;
 
   const mergedNumbers = mergedIds && mergedIds.length > 0
     ? mergedIds.map(id => tables.find(t => t.id === id)?.number).filter(Boolean).join(", ")
@@ -651,39 +634,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       }
     }
 
-    // --- FILE D'ATTENTE CUISINE (delta, idempotent, hub primaire) ---
-    try {
-      const result = await enqueueKitchenPrint({
-        tableId,
-        orderLabel: kitchenOrderLabel,
-        items: items.map((i) => ({ ...i })),
-        orderNote,
-        globalSupplements: activeSupplements,
-        printers,
-      });
-
-      if (result.status === "blocked_unmapped") {
-        toast.error("Catégories non associées à une imprimante cuisine", {
-          description: result.unmappedNames.join(", "),
-          duration: 8000,
-        });
-      } else if (result.status === "error") {
-        toast.error("Impossible d'envoyer en cuisine", {
-          description: result.message,
-        });
-      } else if (result.status === "enqueued") {
-        toast.success(isOccupied ? "Mise à jour envoyée en cuisine" : "Commande envoyée en cuisine");
-        wakePrintQueueDaemon();
-      } else if (result.status === "noop" && result.reason === "empty_delta") {
-        console.log("[KITCHEN] No delta to print for", tableId);
-      } else if (result.status === "noop" && result.reason === "duplicate") {
-        console.log("[KITCHEN] Duplicate idempotency key — already queued");
-      }
-    } catch (err) {
-      console.error("Impossible de lancer l'impression cuisine", err);
-      toast.error("Erreur lors de l'envoi cuisine");
-    }
-
+    toast.success(isOccupied ? "Commande mise à jour" : "Commande enregistrée");
     onClose();
   };
 
@@ -749,36 +700,6 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
     onClose();
   };
 
-  const handleReprintKitchen = async () => {
-    try {
-      const result = await enqueueKitchenPrint({
-        tableId,
-        orderLabel: kitchenOrderLabel,
-        items,
-        orderNote,
-        globalSupplements: activeSupplements,
-        printers,
-      });
-      if (result.status === "blocked_unmapped") {
-        toast.error("Catégories non associées à une imprimante cuisine", {
-          description: result.unmappedNames.join(", "),
-          duration: 8000,
-        });
-      } else if (result.status === "error") {
-        toast.error("Réimpression cuisine impossible", { description: result.message });
-      } else if (result.status === "enqueued") {
-        toast.success("Réimpression cuisine envoyée");
-        wakePrintQueueDaemon();
-      } else if (result.status === "noop" && result.reason === "empty_delta") {
-        toast.info("Rien de nouveau à imprimer en cuisine");
-      } else {
-        toast.info("Job cuisine déjà en file");
-      }
-    } catch (err: any) {
-      toast.error("Erreur réimpression cuisine", { description: err?.message });
-    }
-  };
-
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   // Stable callbacks pour les sous-composants
@@ -835,7 +756,6 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
             onNoteChange={handleNoteChange}
             onValidate={handleValidateOrder}
             onCheckout={handleOpenCheckout}
-            onReprintKitchen={handleReprintKitchen}
             onAddSupplement={(item) => {
               setActiveSupplementItem(item);
               setSupplementModalOpen(true);
@@ -984,14 +904,6 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
                           </button>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleReprintKitchen}
-                        disabled={items.length === 0}
-                        className="w-full rounded-xl border border-border bg-background py-2.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
-                      >
-                        Réimprimer cuisine
-                      </button>
                     </div>
                   ) : (
                     <button

@@ -16,16 +16,13 @@ data class NativePrintJob(
   val escposBase64: String?
     get() = payload.optString("escposBase64", "").takeIf { it.isNotBlank() }
 
-  val fingerprints: JSONObject?
-    get() = payload.optJSONObject("fingerprints")
-
   companion object {
     fun fromJson(row: JSONObject): NativePrintJob {
       val payload = row.optJSONObject("payload") ?: JSONObject()
       return NativePrintJob(
         id = row.getString("id"),
-        jobType = row.optString("job_type", "kitchen"),
-        priority = row.optInt("priority", 10),
+        jobType = row.optString("job_type", "receipt"),
+        priority = row.optInt("priority", 100),
         printerId = row.optString("printer_id", null),
         printerName = row.optString("printer_name", null),
         macAddress = row.optString("mac_address", null)?.trim()?.takeIf { it.isNotEmpty() },

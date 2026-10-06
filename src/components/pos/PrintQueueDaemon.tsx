@@ -125,6 +125,3 @@ export function PrintQueueDaemon() {
 
   return null;
 }
-
-/** @deprecated — use PrintQueueDaemon */
-export const KitchenPrintWorker = PrintQueueDaemon;

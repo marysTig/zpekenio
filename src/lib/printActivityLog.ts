@@ -1,12 +1,11 @@
 /**
- * Client-side activity log for caisse + kitchen print attempts.
- * Shown in Admin so receipt prints are visible even though they are not DB jobs.
+ * Client-side activity log for caisse print attempts.
  */
 
 export type PrintActivityEntry = {
   id: string;
   at: string;
-  kind: "caisse" | "kitchen" | "test";
+  kind: "caisse" | "test";
   printerName: string;
   mac: string | null;
   status: "started" | "success" | "error";

@@ -22,7 +22,7 @@ class PrintWorkerLoop(
 ) {
   companion object {
     private const val TAG = "PrintWorkerLoop"
-    /** 2-printer profile — snappy claim between jobs; Realtime wake covers idle. */
+    /** Single-printer profile — snappy claim between jobs; Realtime wake covers idle. */
     private const val POLL_BUSY_MS = 120L
     private const val POLL_IDLE_MS = 450L
     private const val WORKER_THREAD = "HubPrintWorker"
@@ -189,40 +189,23 @@ class PrintWorkerLoop(
     val b64 = job.escposBase64
     Log.i(TAG, "PRINT START · ${job.jobType} → $name")
 
+    // Receipts-only: cancel leftover kitchen jobs without Bluetooth I/O
+    if (job.jobType != "receipt") {
+      Log.i(TAG, "cancel legacy kitchen job ${job.id}")
+      repo.cancelJob(job.id, "Cuisine désactivée — ticket ignoré")
+      return
+    }
+
     if (mac.isNullOrBlank() || b64.isNullOrBlank()) {
       repo.scheduleRetry(job.id, 99, "Payload ou MAC manquant", 0)
       lastError.set("Payload ou MAC manquant")
       return
     }
 
-    val isReceipt = job.jobType == "receipt"
-
-    // Before kitchen write, abort if receipt arrived
-    if (!isReceipt && repo.hasPendingReceipt()) {
-      Log.i(TAG, "receipt pending — requeue kitchen ${job.id}")
-      repo.requeueInterrupted(job.id)
-      printer.hardSettle("receipt-preempt")
-      return
-    }
-
     try {
       repo.heartbeat(job.id)
-      // Re-check after heartbeat — receipt may have been enqueued mid-flight.
-      if (!isReceipt && repo.hasPendingReceipt()) {
-        Log.i(TAG, "receipt pending post-heartbeat — requeue kitchen ${job.id}")
-        repo.requeueInterrupted(job.id)
-        printer.hardSettle("receipt-preempt")
-        return
-      }
-      printer.sendEscPos(name, mac, b64, isReceipt)
+      printer.sendEscPos(name, mac, b64, isReceipt = true)
       repo.markDone(job.id)
-      if (!isReceipt) {
-        val fps = job.fingerprints
-        val tableId = job.tableId
-        if (fps != null && !tableId.isNullOrBlank()) {
-          repo.patchKitchenFingerprints(tableId, fps)
-        }
-      }
       lastError.set(null)
       Log.i(TAG, "PRINT END OK · $name")
     } catch (e: Exception) {
@@ -234,16 +217,13 @@ class PrintWorkerLoop(
       } catch (_: Exception) {
         /* ignore */
       }
-      // If receipt appeared mid-kitchen, treat as preempt (no attempt++)
-      if (!isReceipt && repo.hasPendingReceipt()) {
-        repo.requeueInterrupted(job.id)
-        return
-      }
       val nextAttempt = job.attemptCount + 1
-      val backoff =
-        if (isReceipt) PrintJobRepository.RECEIPT_RETRY_BACKOFF_MS
-        else PrintJobRepository.RETRY_BACKOFF_MS
-      repo.scheduleRetry(job.id, nextAttempt, msg, backoff)
+      repo.scheduleRetry(
+        job.id,
+        nextAttempt,
+        msg,
+        PrintJobRepository.RECEIPT_RETRY_BACKOFF_MS,
+      )
     }
   }
 

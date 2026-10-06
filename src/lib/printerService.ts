@@ -2,12 +2,10 @@ import { type GlobalSupplement } from "@/lib/globalSupplementsStore";
 import { type Printer } from "@/lib/printerStore";
 import { type CartItem } from "@/lib/cart";
 import {
-  KitchenAbortedError,
   getRadioMode,
 } from "@/lib/bluetoothRadio";
 import {
   runAdminTestPrint,
-  runProductionKitchen,
   runProductionReceipt,
   runProbeConnect,
 } from "@/lib/bluetoothCoordinator";
@@ -16,9 +14,7 @@ import {
   nativeAdminProbe,
   nativeAdminTestPrint,
 } from "@/lib/hubPrintWorkerPlugin";
-import { openCircuit } from "@/lib/kitchenCircuitBreaker";
 import {
-  buildKitchenEscPos,
   buildReceiptEscPos,
   encodeEscPosText,
   uint8ToBase64,
@@ -47,8 +43,8 @@ export {
   getRadioMode,
 } from "@/lib/bluetoothRadio";
 
-/** Inter-printer gap — 2-printer profile (matches INTER_PRINTER_GAP_MS). */
-export const BT_INTER_PRINTER_GAP_MS = 700;
+/** Single-printer cool-down (matches RECEIPT_MAC_COOLDOWN_MS). */
+export const BT_INTER_PRINTER_GAP_MS = 350;
 
 const webConnectedDevices = new Map<string, any>();
 
@@ -61,40 +57,6 @@ async function sendWebBluetooth(printerId: string, data: Uint8Array): Promise<vo
   for (let i = 0; i < data.length; i += chunkSize) {
     const chunk = data.slice(i, i + chunkSize);
     await char.writeValue(chunk);
-  }
-}
-
-/**
- * Kitchen path — via bluetoothCoordinator (single entry-point).
- * Opens circuit breaker on MAC failure (not on receipt preempt abort).
- */
-async function sendKitchenNative(
-  printer: Printer,
-  data: Uint8Array,
-): Promise<void> {
-  if (!printer.mac_address) {
-    throw new Error("Adresse MAC non configurée pour " + printer.name);
-  }
-  const ac = new AbortController();
-  try {
-    const result = await runProductionKitchen({
-      jobId: `direct-kitchen:${printer.id}:${Date.now()}`,
-      printerName: printer.name,
-      macAddress: printer.mac_address,
-      data,
-      abortSignal: ac.signal,
-    });
-    if (result === "aborted") {
-      throw new KitchenAbortedError();
-    }
-  } catch (err) {
-    if (!(err instanceof KitchenAbortedError)) {
-      openCircuit(
-        printer.mac_address,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    throw err;
   }
 }
 
@@ -122,7 +84,6 @@ export const printerService = {
   },
 
   isBluetoothBusy(): boolean {
-    // Kitchen is preemptible — only block UI hints when receipt owns the radio
     return getRadioMode() === "receipt";
   },
 
@@ -255,7 +216,7 @@ export const printerService = {
     }
 
     let ticket = INIT;
-    ticket += ALIGN_CENTER + BOLD_ON + "LA VIDA FOOD\n" + BOLD_OFF;
+    ticket += ALIGN_CENTER + BOLD_ON + "Z-PEKENIO\n" + BOLD_OFF;
     ticket += "TEST IMPRESSION\n";
     ticket += "--------------------------------\n";
     ticket += ALIGN_LEFT;
@@ -285,8 +246,7 @@ export const printerService = {
   },
 
   /**
-   * Isolated receipt print — preempts kitchen, never shares kitchen queue/mutex wait.
-   * Prefer this for Encaisser.
+   * Receipt print — via coordinator / native hub.
    */
   async printReceiptIsolated(
     printer: Printer,
@@ -319,74 +279,6 @@ export const printerService = {
     });
     if (this.isNativePlatform()) {
       await sendReceiptNative(printer, data);
-    } else {
-      await sendWebBluetooth(printer.id, data);
-    }
-  },
-
-  /**
-   * Kitchen print — cancellable via radio preempt; opens circuit on MAC failure.
-   * Prefer PrintQueueDaemon for POS; kept for Admin / legacy direct print.
-   */
-  async printKitchenCancellable(
-    printer: Printer,
-    items: CartItem[],
-    orderNumber: string | number,
-    orderNote?: string,
-    globalSupplements?: GlobalSupplement[],
-  ): Promise<void> {
-    return this.printKitchen(
-      printer,
-      items,
-      orderNumber,
-      orderNote,
-      globalSupplements,
-    );
-  },
-
-  async printKitchen(
-    printer: Printer,
-    items: CartItem[],
-    orderNumber: string | number,
-    orderNote?: string,
-    globalSupplements?: GlobalSupplement[],
-  ): Promise<void> {
-    if (!this.isNativePlatform() && !this.isConnected(printer.id)) {
-      throw new Error(
-        "L'imprimante n'est pas connectée. Veuillez la reconnecter (Web Bluetooth).",
-      );
-    }
-
-    if (!items || items.length === 0) {
-      throw new Error(`Aucune ligne à imprimer pour ${printer.name}.`);
-    }
-
-    const categoryIds = new Set(printer.category_ids ?? []);
-    const legacyNames = new Set(printer.categories ?? []);
-    const catchAll = categoryIds.size === 0 && legacyNames.size === 0;
-    const filteredItems = catchAll
-      ? items
-      : items.filter((item) => {
-          const catId = item.product.categoryId;
-          if (catId && categoryIds.size > 0) return categoryIds.has(catId);
-          if (legacyNames.size > 0) return legacyNames.has(item.product.category);
-          return false;
-        });
-
-    if (filteredItems.length === 0) {
-      throw new Error(
-        `Aucune ligne ne correspond aux catégories de ${printer.name}. Vérifiez le mapping catégories.`,
-      );
-    }
-
-    const data = buildKitchenEscPos({
-      items: filteredItems,
-      orderNumber,
-      ...(orderNote ? { orderNote } : {}),
-      ...(globalSupplements?.length ? { globalSupplements } : {}),
-    });
-    if (this.isNativePlatform()) {
-      await sendKitchenNative(printer, data);
     } else {
       await sendWebBluetooth(printer.id, data);
     }

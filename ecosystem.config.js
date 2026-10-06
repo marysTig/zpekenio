@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "vida-food-caisse",
+      name: "z-pekenio",
       script: ".output/server/index.mjs",
       env: {
         PORT: 8080,

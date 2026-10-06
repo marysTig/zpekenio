@@ -41,7 +41,7 @@ function MenuPublicPage() {
           <div className="grid h-9 w-9 md:h-10 md:w-10 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md">
             <ChefHat className="h-5 w-5 md:h-6 md:w-6" />
           </div>
-          <h1 className="text-lg md:text-xl font-extrabold tracking-tight uppercase">LA VIDA FOOD</h1>
+          <h1 className="text-lg md:text-xl font-extrabold tracking-tight uppercase">Z-PEKENIO</h1>
         </div>
 
         {/* ── CATEGORIES (Scroll Horizontal) ── */}
@@ -176,7 +176,7 @@ function MenuPublicPage() {
       {/* ── FOOTER PUBLIC ── */}
       <footer className="border-t border-border bg-muted/30 py-4 md:py-6 text-center">
         <p className="text-xs md:text-sm font-medium text-muted-foreground">
-          © {new Date().getFullYear()} La Vida Food. Tous droits réservés.
+          © {new Date().getFullYear()} Z-pekenio. Tous droits réservés.
         </p>
       </footer>
     </div>

@@ -3,11 +3,11 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/")(  {
   head: () => ({
     meta: [
-      { title: "Tables — La Vida Food" },
+      { title: "Tables — Z-pekenio" },
       {
         name: "description",
         content:
-          "Gestion des tables La Vida Food.",
+          "Gestion des tables Z-pekenio.",
       },
     ],
   }),

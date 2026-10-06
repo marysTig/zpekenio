@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Classic SPP (RFCOMM) ESC/POS sender — connect → write → drain → disconnect.
- * One socket at a time (single radio). Tuned for 2-printer hubs (caisse + kitchen).
+ * One socket at a time (single radio). Tuned for single Caisse printer.
  */
 class EscPosBluetoothPrinter {
   companion object {
@@ -20,11 +20,11 @@ class EscPosBluetoothPrinter {
     private val SPP_UUID: UUID =
       UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
-    /** 2-printer profile — keep in sync with JS bluetoothRadio / kitchenPrintQueue. */
+    /** Single-printer profile — keep in sync with JS bluetoothRadio / kitchenPrintQueue. */
     const val OP_TIMEOUT_MS = 15_000L
     const val HARD_SETTLE_MS = 700L
     const val PRE_DISCONNECT_DRAIN_MS = 175L
-    const val INTER_PRINTER_GAP_MS = 700L
+    const val INTER_PRINTER_GAP_MS = 350L
     const val RECEIPT_MAC_COOLDOWN_MS = 350L
   }
 

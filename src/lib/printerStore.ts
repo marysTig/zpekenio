@@ -2,13 +2,11 @@ import { useEffect, useCallback } from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
 
-export type PrinterType = "caisse" | "cuisine";
+/** Single-printer POS — Caisse only. */
+export type PrinterType = "caisse";
 
-/** Map legacy plaque/four rows to cuisine until DB migration is applied. */
-export function normalizePrinterType(raw: unknown): PrinterType {
-  if (raw === "caisse") return "caisse";
-  if (raw === "cuisine" || raw === "plaque" || raw === "four") return "cuisine";
-  return "cuisine";
+export function normalizePrinterType(_raw: unknown): PrinterType {
+  return "caisse";
 }
 
 export type Printer = {
@@ -17,9 +15,8 @@ export type Printer = {
   type: PrinterType;
   mac_address: string | null;
   enabled: boolean;
-  /** @deprecated Legacy name-based routing — prefer category_ids */
+  /** Kept for DB compatibility — always empty in single-printer mode. */
   categories: string[];
-  /** UUID category ids used for kitchen routing; empty = catch-all cuisine */
   category_ids: string[];
 };
 
@@ -37,44 +34,6 @@ const usePrinterGlobalState = create<PrinterGlobalState>((set) => ({
   setLoading: (loading) => set({ loading }),
 }));
 
-function parseUuidArray(raw: unknown): string[] {
-  if (Array.isArray(raw)) {
-    return raw.map(String).filter(Boolean);
-  }
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-    } catch {
-      return raw
-        .replace(/^{/, "")
-        .replace(/}$/, "")
-        .split(",")
-        .map((s) => s.trim().replace(/^"/, "").replace(/"$/, ""))
-        .filter(Boolean);
-    }
-  }
-  return [];
-}
-
-function parseNameCategories(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
-    } catch {
-      return raw
-        .replace(/^{/, "")
-        .replace(/}$/, "")
-        .split(",")
-        .map((s) => s.trim().replace(/^"/, "").replace(/"$/, ""))
-        .filter(Boolean);
-    }
-  }
-  return [];
-}
-
 async function fetchPrintersFromDB(): Promise<Printer[]> {
   const { data, error } = await supabase
     .from("printers")
@@ -87,20 +46,17 @@ async function fetchPrintersFromDB(): Promise<Printer[]> {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => {
-    const rawType = row["type"];
-    const legacyStation = rawType === "plaque" || rawType === "four";
-    return {
+  return (data ?? [])
+    .filter((row: any) => row["type"] === "caisse")
+    .map((row: any) => ({
       id: row["id"] as string,
       name: row["name"] as string,
-      type: normalizePrinterType(rawType),
+      type: "caisse" as const,
       mac_address: (row["mac_address"] as string | null) ?? null,
       enabled: (row["enabled"] as boolean) ?? true,
-      categories: legacyStation ? [] : parseNameCategories(row["categories"]),
-      // Legacy plaque/four become catch-all cuisine until DB migration clears filters
-      category_ids: legacyStation ? [] : parseUuidArray(row["category_ids"]),
-    };
-  });
+      categories: [] as string[],
+      category_ids: [] as string[],
+    }));
 }
 
 let _printerInitialized = false;
@@ -145,13 +101,19 @@ export function usePrinterStore() {
   }, [setPrinters, setLoading]);
 
   const addPrinter = async (printer: Omit<Printer, "id">) => {
+    const existing = usePrinterGlobalState.getState().printers;
+    if (existing.length > 0) {
+      throw new Error(
+        "Une seule imprimante caisse est autorisée. Modifiez ou supprimez l'existante.",
+      );
+    }
     const { error } = await supabase.from("printers").insert({
       name: printer.name,
-      type: printer.type,
+      type: "caisse",
       mac_address: printer.mac_address || null,
       enabled: printer.enabled,
-      categories: printer.categories ?? [],
-      category_ids: printer.category_ids ?? [],
+      categories: [],
+      category_ids: [],
     });
     if (error) throw new Error(error.message);
     await reload();
@@ -162,11 +124,11 @@ export function usePrinterStore() {
       .from("printers")
       .update({
         ...(printer.name !== undefined && { name: printer.name }),
-        ...(printer.type !== undefined && { type: printer.type }),
+        type: "caisse",
         ...(printer.mac_address !== undefined && { mac_address: printer.mac_address }),
         ...(printer.enabled !== undefined && { enabled: printer.enabled }),
-        ...(printer.categories !== undefined && { categories: printer.categories }),
-        ...(printer.category_ids !== undefined && { category_ids: printer.category_ids }),
+        categories: [],
+        category_ids: [],
       })
       .eq("id", id);
     if (error) throw new Error(error.message);

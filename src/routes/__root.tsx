@@ -18,7 +18,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { PageLoader } from "../components/ui/PageLoader";
 import {
   PrintQueueDaemon,
-  getKitchenPrintRealtimeManager,
+  getPrintQueueRealtimeManager,
 } from "../components/pos/PrintQueueDaemon";
 import { PrintFailureBanner } from "../components/pos/PrintFailureBanner";
 import { HubForegroundSync } from "../components/pos/HubForegroundSync";
@@ -94,11 +94,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "La Vida Food — Caisse POS" },
-      { name: "description", content: "Logiciel de caisse pour le restaurant La Vida Food." },
-      { name: "author", content: "La Vida Food" },
-      { property: "og:title", content: "La Vida Food — Caisse POS" },
-      { property: "og:description", content: "Logiciel de caisse pour le restaurant La Vida Food." },
+      { title: "Z-pekenio — Caisse POS" },
+      { name: "description", content: "Logiciel de caisse pour le restaurant Z-pekenio." },
+      { name: "author", content: "Z-pekenio" },
+      { property: "og:title", content: "Z-pekenio — Caisse POS" },
+      { property: "og:description", content: "Logiciel de caisse pour le restaurant Z-pekenio." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -176,7 +176,7 @@ function RootComponent() {
           }
 
           if (isLoggedIn || isHub) {
-            void getKitchenPrintRealtimeManager()?.handleForeground();
+            void getPrintQueueRealtimeManager()?.handleForeground();
             if (isHub) {
               // Never race production — probeAllPrinters defers when queue busy
               scheduleHubAutoBluetoothProbe(1500);

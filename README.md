@@ -1,8 +1,8 @@
-# Vida Food Caisse
+# Z-pekenio Caisse
 
-Création de l'interface Caisse — La Vida Food
+Création de l'interface Caisse — Z-pekenio
 
-Crée l'interface principale de Caisse (POS) pour le restaurant La Vida Food.
+Crée l'interface principale de Caisse (POS) pour le restaurant Z-pekenio.
 
 🎯 Objectif
 
@@ -98,7 +98,7 @@ Créer une sidebar verticale fixe à gauche.
 
 En haut :
 
-LA VIDA FOOD
+Z-PEKENIO
 
 avec une petite icône/logo de restaurant.
 

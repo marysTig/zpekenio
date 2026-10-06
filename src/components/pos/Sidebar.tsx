@@ -45,7 +45,7 @@ export function Sidebar(_props: SidebarProps) {
           <ChefHat className="h-5 w-5 text-primary-foreground" />
         </div>
         <span className="hidden truncate text-sm font-extrabold tracking-tight lg:block">
-          LA VIDA FOOD
+          Z-PEKENIO
         </span>
       </div>
 

@@ -98,12 +98,12 @@ export function PrintFailureBanner() {
       <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">
-            {jobs.length} ticket{jobs.length > 1 ? "s" : ""} non imprimé
+            {jobs.length} reçu{jobs.length > 1 ? "s" : ""} non imprimé
             {jobs.length > 1 ? "s" : ""}
           </p>
           {stations.length > 0 && (
             <p className="text-xs text-amber-200/90 truncate">
-              {stations.join(" · ")}
+              Imprimante : {stations.join(" · ")}
             </p>
           )}
         </div>

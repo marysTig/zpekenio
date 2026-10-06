@@ -8,7 +8,6 @@ import type { GlobalSupplement } from "@/lib/globalSupplementsStore";
 
 const ESC = "\x1b";
 const GS = "\x1d";
-const LF = "\n";
 const INIT = ESC + "@";
 const ALIGN_CENTER = ESC + "a" + "\x01";
 const ALIGN_LEFT = ESC + "a" + "\x00";
@@ -40,84 +39,6 @@ export function base64ToUint8(b64: string): Uint8Array {
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
-}
-
-export function buildKitchenEscPos(params: {
-  items: CartItem[];
-  orderNumber: string | number;
-  orderNote?: string;
-  globalSupplements?: GlobalSupplement[];
-}): Uint8Array {
-  const { items, orderNumber, orderNote, globalSupplements } = params;
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-  const timeStr = now.toLocaleTimeString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const SEP = "--------------------\n";
-
-  let ticket = INIT;
-  ticket += ALIGN_CENTER;
-  ticket +=
-    DOUBLE_HEIGHT_WIDTH + BOLD_ON + "LA VIDA FOOD\n" + NORMAL_SIZE + BOLD_OFF;
-
-  const orderNumStr = String(orderNumber);
-  let orderLabel: string;
-  if (
-    orderNumStr.toLowerCase().startsWith("emport") ||
-    orderNumStr.toLowerCase().includes("emporter")
-  ) {
-    orderLabel = orderNumStr.replace(/^emporter\s*/i, "A EMPORTER ");
-  } else {
-    orderLabel = `Table ${orderNumStr}`;
-  }
-  ticket +=
-    BOLD_ON + DOUBLE_HEIGHT_WIDTH + orderLabel + "\n" + NORMAL_SIZE + BOLD_OFF;
-  ticket += `${dateStr}\n`;
-  ticket += `${timeStr}\n`;
-  ticket += LF;
-
-  ticket += ALIGN_LEFT;
-  for (const item of items) {
-    ticket += SEP;
-    let kitchenName = item.product.name;
-    if (item.selectedOption) {
-      kitchenName = `${item.product.name} ${item.selectedOption.label}`;
-    }
-    ticket += BOLD_ON + `${item.quantity} x ${kitchenName}\n` + BOLD_OFF;
-    for (const sup of item.supplements) {
-      ticket += `  + ${sup.label}\n`;
-    }
-    if (item.note) {
-      ticket += `  *** Note: ${item.note} ***\n`;
-    }
-    ticket += SEP;
-  }
-
-  if (globalSupplements && globalSupplements.length > 0) {
-    ticket += LF;
-    ticket += ALIGN_LEFT;
-    ticket += SEP;
-    ticket += BOLD_ON + "SUPPLEMENTS DE LA COMMANDE :\n" + BOLD_OFF;
-    for (const supp of globalSupplements) {
-      ticket += `+ ${supp.label}\n`;
-    }
-    ticket += SEP;
-  }
-
-  if (orderNote) {
-    ticket += LF;
-    ticket += ALIGN_CENTER + BOLD_ON + `NOTE : ${orderNote}\n` + BOLD_OFF;
-  }
-
-  ticket += "\n\n\n\n";
-  ticket += CUT_PAPER;
-  return encodeEscPosText(ticket);
 }
 
 export function buildReceiptEscPos(params: {
@@ -152,7 +73,7 @@ export function buildReceiptEscPos(params: {
     ALIGN_CENTER +
     DOUBLE_HEIGHT_WIDTH +
     BOLD_ON +
-    "LA VIDA FOOD\n" +
+    "Z-PEKENIO\n" +
     NORMAL_SIZE +
     BOLD_OFF;
   ticket += "GOOD FOOD . GOOD MOOD\n\n";
@@ -160,7 +81,7 @@ export function buildReceiptEscPos(params: {
   ticket += ALIGN_LEFT;
   ticket += " Seddouk, Bejaia\n";
   ticket += " 0778 46 69 14\n";
-  ticket += " @lavidafood\n";
+  ticket += " @zpekenio\n";
   ticket += ALIGN_CENTER;
   ticket += "\nFast Food with Love\n";
   ticket += ALIGN_LEFT;
@@ -255,7 +176,7 @@ export function buildReceiptEscPos(params: {
   ticket += ALIGN_CENTER;
   ticket += "         Merci !\n";
   ticket += "A BIENTOT CHEZ\n";
-  ticket += "LA VIDA FOOD\n";
+  ticket += "Z-PEKENIO\n";
   ticket += "♥\n\n\n\n";
   ticket += CUT_PAPER;
   return encodeEscPosText(ticket);

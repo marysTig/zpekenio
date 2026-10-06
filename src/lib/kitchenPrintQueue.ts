@@ -1,33 +1,22 @@
 /**
- * Unified durable print queue (kitchen stations + receipt).
- * UI only enqueues — PrintQueueDaemon owns Bluetooth.
+ * Durable print queue — Caisse receipt only.
+ * UI enqueues; PrintQueueDaemon / native hub owns Bluetooth.
  */
 
 import { supabase } from "@/lib/supabase";
-import {
-  computeKitchenFingerprint,
-  getKitchenDelta,
-  type CartItem,
-} from "@/lib/cart";
+import type { CartItem } from "@/lib/cart";
 import type { GlobalSupplement } from "@/lib/globalSupplementsStore";
 import { getPrintersFromStore, type Printer } from "@/lib/printerStore";
-import { useTableOrdersStore } from "@/lib/tableOrdersStore";
 import { getLocalPrintDeviceId } from "@/lib/printDevice";
-import {
-  buildKitchenEscPos,
-  buildReceiptEscPos,
-  uint8ToBase64,
-} from "@/lib/escposTickets";
+import { buildReceiptEscPos, uint8ToBase64 } from "@/lib/escposTickets";
 
 export const PRIORITY_RECEIPT = 100;
-export const PRIORITY_KITCHEN = 10;
 export const MAX_PRINT_ATTEMPTS = 3;
-/** Longer backoff after failures so RFCOMM can settle (was 2.5s → thrash). */
-/** 2-printer profile — keep in sync with EscPosBluetoothPrinter / PrintJobRepository. */
+/** Single-printer profile — keep in sync with EscPosBluetoothPrinter / PrintJobRepository. */
 export const RETRY_BACKOFF_MS = 2500;
 export const RECEIPT_RETRY_BACKOFF_MS = 450;
-export const INTER_PRINTER_GAP_MS = 700;
-/** Short cool-down when caisse switches MAC (not the full kitchen gap). */
+/** @deprecated Single printer — MAC switch gap unused; kept for coordinator import. */
+export const INTER_PRINTER_GAP_MS = 350;
 export const RECEIPT_MAC_COOLDOWN_MS = 350;
 
 export type PrintJobType = "kitchen" | "receipt";
@@ -44,13 +33,6 @@ export type PrintJobPayload = {
   orderLabel: string | number;
   orderNote?: string;
   globalSupplements?: GlobalSupplement[];
-  /** Kitchen: fingerprints to patch after this station succeeds */
-  fingerprints?: Record<string, string>;
-  deltaLineIds?: string[];
-  /** Kitchen: lines that were on this ticket (for consol re-route) */
-  lines?: CartItem[];
-  /** Set when this job is a one-shot consol of a failed station */
-  consolOfJobId?: string;
 };
 
 export type PrintJob = {
@@ -73,30 +55,8 @@ export type PrintJob = {
   printed_at: string | null;
 };
 
-export type KitchenStationBundle = {
-  printerId: string;
-  printerName: string;
-  lines: CartItem[];
-};
-
-/** @deprecated — legacy shape kept for Admin job list compatibility */
-export type KitchenPrintJobPayload = {
-  tableId: string;
-  orderLabel: string | number;
-  orderNote?: string;
-  globalSupplements?: GlobalSupplement[];
-  stations: KitchenStationBundle[];
-  deltaLineIds: string[];
-  fingerprints: Record<string, string>;
-};
-
+/** @deprecated Alias for Admin job list compatibility */
 export type KitchenPrintJob = PrintJob;
-
-export type EnqueueKitchenResult =
-  | { status: "enqueued"; jobIds: string[] }
-  | { status: "noop"; reason: "empty_delta" | "duplicate" }
-  | { status: "blocked_unmapped"; unmappedNames: string[] }
-  | { status: "error"; message: string };
 
 export type EnqueueReceiptResult =
   | { status: "enqueued"; jobId: string }
@@ -104,264 +64,6 @@ export type EnqueueReceiptResult =
   | { status: "error"; message: string };
 
 const STALE_PRINTING_MS = 2 * 60 * 1000;
-
-function enabledKitchenPrinters(printers: Printer[]): Printer[] {
-  const cuisine = printers.filter((p) => p.enabled && p.type === "cuisine");
-  // Strict 2-slot: at most one cuisine (prefer one with a MAC)
-  const withMac = cuisine.find((p) => (p.mac_address || "").trim() !== "");
-  if (withMac) return [withMac];
-  return cuisine.slice(0, 1);
-}
-
-function isCatchAllCuisine(printer: Printer): boolean {
-  return (printer.category_ids?.length ?? 0) === 0;
-}
-
-function lineCategoryId(item: CartItem): string | undefined {
-  return item.product.categoryId || undefined;
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  if (typeof crypto !== "undefined" && crypto.subtle) {
-    const hash = await crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(hash))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-  let h = 0;
-  for (let i = 0; i < input.length; i++) {
-    h = (Math.imul(31, h) + input.charCodeAt(i)) | 0;
-  }
-  return `fb-${Math.abs(h).toString(16)}-${input.length}`;
-}
-
-export function findUnmappedDeltaLines(
-  delta: CartItem[],
-  kitchenPrinters: Printer[],
-): CartItem[] {
-  if (kitchenPrinters.some(isCatchAllCuisine)) return [];
-  const mappedIds = new Set<string>();
-  for (const p of kitchenPrinters) {
-    for (const id of p.category_ids ?? []) mappedIds.add(id);
-  }
-  return delta.filter((item) => {
-    const catId = lineCategoryId(item);
-    return !catId || !mappedIds.has(catId);
-  });
-}
-
-export function buildStationBundles(
-  delta: CartItem[],
-  kitchenPrinters: Printer[],
-): KitchenStationBundle[] {
-  const bundles: KitchenStationBundle[] = [];
-  for (const printer of kitchenPrinters) {
-    const lines = isCatchAllCuisine(printer)
-      ? delta
-      : delta.filter((item) => {
-          const catId = lineCategoryId(item);
-          const ids = new Set(printer.category_ids ?? []);
-          return !!catId && ids.has(catId);
-        });
-    if (lines.length > 0) {
-      bundles.push({
-        printerId: printer.id,
-        printerName: printer.name,
-        lines,
-      });
-    }
-  }
-  return bundles;
-}
-
-export async function buildIdempotencyKey(
-  tableId: string,
-  delta: CartItem[],
-): Promise<string> {
-  const parts = delta
-    .map((item) => `${item.id}:${computeKitchenFingerprint(item)}`)
-    .sort();
-  return sha256Hex(`${tableId}|${parts.join(";")}`);
-}
-
-export type EnqueueKitchenParams = {
-  tableId: string;
-  orderLabel: string | number;
-  items?: CartItem[];
-  orderNote?: string;
-  globalSupplements?: GlobalSupplement[];
-  printers?: Printer[];
-};
-
-/**
- * One DB job per kitchen station with prebuilt ESC/POS — no Bluetooth.
- */
-export async function enqueueKitchenStations(
-  params: EnqueueKitchenParams,
-): Promise<EnqueueKitchenResult> {
-  console.log("[KITCHEN ENQUEUE] begin", {
-    tableId: params.tableId,
-    label: params.orderLabel,
-  });
-  const store = useTableOrdersStore.getState();
-  const items = params.items ?? store.orders[params.tableId] ?? [];
-  const orderNote =
-    params.orderNote ?? store.orderNotes[params.tableId] ?? "";
-  const globalSupplements =
-    params.globalSupplements ?? store.orderSupplements[params.tableId] ?? [];
-  const printers = params.printers ?? getPrintersFromStore();
-  const kitchenPrinters = enabledKitchenPrinters(printers);
-
-  const delta = getKitchenDelta(items);
-  console.log("[KITCHEN ENQUEUE] delta", {
-    items: items.length,
-    delta: delta.length,
-    kitchenPrinters: kitchenPrinters.length,
-  });
-  if (delta.length === 0) {
-    return { status: "noop", reason: "empty_delta" };
-  }
-
-  if (kitchenPrinters.length === 0) {
-    return {
-      status: "error",
-      message: "Aucune imprimante cuisine activée.",
-    };
-  }
-
-  const unmapped = findUnmappedDeltaLines(delta, kitchenPrinters);
-  if (unmapped.length > 0) {
-    return {
-      status: "blocked_unmapped",
-      unmappedNames: unmapped.map((i) => i.product.name),
-    };
-  }
-
-  const stations = buildStationBundles(delta, kitchenPrinters);
-  if (stations.length === 0) {
-    return {
-      status: "blocked_unmapped",
-      unmappedNames: delta.map((i) => i.product.name),
-    };
-  }
-
-  const baseKey = await buildIdempotencyKey(params.tableId, delta);
-  const now = new Date().toISOString();
-  const jobIds: string[] = [];
-  let skippedNoMac = 0;
-
-  for (const station of stations) {
-    const printer = kitchenPrinters.find((p) => p.id === station.printerId);
-    const mac = (printer?.mac_address ?? "").trim();
-    if (!printer || !mac) {
-      skippedNoMac += 1;
-      console.warn("[KITCHEN ENQUEUE] skip no MAC", station.printerName);
-      continue;
-    }
-
-    const stationFps: Record<string, string> = {};
-    for (const item of station.lines) {
-      stationFps[item.id] = computeKitchenFingerprint(item);
-    }
-
-    const escpos = buildKitchenEscPos({
-      items: station.lines,
-      orderNumber: params.orderLabel,
-      ...(orderNote ? { orderNote } : {}),
-      ...(globalSupplements.length > 0 ? { globalSupplements } : {}),
-    });
-
-    const idempotencyKey = `${baseKey}|${station.printerId}`;
-    const payload: PrintJobPayload = {
-      escposBase64: uint8ToBase64(escpos),
-      tableId: params.tableId,
-      orderLabel: params.orderLabel,
-      fingerprints: stationFps,
-      deltaLineIds: station.lines.map((l) => l.id),
-      lines: station.lines,
-    };
-    if (orderNote) payload.orderNote = orderNote;
-    if (globalSupplements.length > 0) payload.globalSupplements = globalSupplements;
-
-    const row = {
-      table_id: params.tableId,
-      job_type: "kitchen" as const,
-      priority: PRIORITY_KITCHEN,
-      printer_id: printer.id,
-      printer_name: printer.name,
-      mac_address: mac,
-      idempotency_key: idempotencyKey,
-      status: "pending" as const,
-      attempt_count: 0,
-      next_attempt_at: now,
-      payload,
-      updated_at: now,
-    };
-
-    console.log("[KITCHEN ENQUEUE] insert", printer.name);
-    const { data, error } = await supabase
-      .from("print_jobs")
-      .insert(row)
-      .select("id")
-      .maybeSingle();
-
-    if (error) {
-      if (error.code === "23505") {
-        const { data: existing } = await supabase
-          .from("print_jobs")
-          .select("id, status")
-          .eq("idempotency_key", idempotencyKey)
-          .maybeSingle();
-
-        if (
-          existing &&
-          (existing.status === "needs_manual" || existing.status === "cancelled")
-        ) {
-          await supabase
-            .from("print_jobs")
-            .update({
-              status: "pending",
-              attempt_count: 0,
-              next_attempt_at: now,
-              payload,
-              claimed_by_device_id: null,
-              error: null,
-              updated_at: now,
-            })
-            .eq("id", existing.id as string);
-          jobIds.push(existing.id as string);
-          continue;
-        }
-        // pending/printing/done → skip duplicate
-        continue;
-      }
-      console.error("[print_jobs] kitchen enqueue error:", error.message);
-      return { status: "error", message: error.message };
-    }
-    if (data?.id) jobIds.push(data.id as string);
-  }
-
-  if (jobIds.length === 0) {
-    if (skippedNoMac > 0) {
-      return {
-        status: "error",
-        message:
-          "Imprimante(s) cuisine sans adresse MAC — associez-les dans Admin → Imprimantes.",
-      };
-    }
-    return { status: "noop", reason: "duplicate" };
-  }
-  console.log("[KITCHEN ENQUEUE] ok", jobIds);
-  return { status: "enqueued", jobIds };
-}
-
-/** Alias used by existing Valider call sites */
-export async function enqueueKitchenPrint(
-  params: EnqueueKitchenParams,
-): Promise<EnqueueKitchenResult> {
-  return enqueueKitchenStations(params);
-}
 
 export type EnqueueReceiptParams = {
   tableId: string;
@@ -447,78 +149,45 @@ export async function enqueueReceipt(
   return { status: "enqueued", jobId: (data?.id as string) ?? "" };
 }
 
-/** One-shot consol: re-route failed station payload to another kitchen printer. */
-export async function enqueueConsolKitchenJob(params: {
-  failedJob: PrintJob;
-  targetPrinter: Printer;
-}): Promise<{ status: "enqueued" | "duplicate" | "error"; jobId?: string; message?: string }> {
-  const { failedJob, targetPrinter } = params;
-  const mac = (targetPrinter.mac_address ?? "").trim();
-  if (!mac) {
-    return { status: "error", message: "Imprimante sans adresse MAC" };
-  }
-  const idempotencyKey = `consol|${failedJob.id}|${targetPrinter.id}`;
+/** Cancel leftover kitchen jobs so they never reach the Bluetooth drain. */
+export async function cancelLegacyKitchenJobs(): Promise<number> {
   const now = new Date().toISOString();
-  const payload: PrintJobPayload = {
-    ...failedJob.payload,
-    consolOfJobId: failedJob.id,
-  };
-
   const { data, error } = await supabase
     .from("print_jobs")
-    .insert({
-      table_id: failedJob.table_id,
-      job_type: "kitchen",
-      priority: PRIORITY_KITCHEN,
-      printer_id: targetPrinter.id,
-      printer_name: targetPrinter.name,
-      mac_address: mac,
-      idempotency_key: idempotencyKey,
-      status: "pending",
-      attempt_count: 0,
-      next_attempt_at: now,
-      payload,
-      error: `Consol depuis ${failedJob.printer_name ?? failedJob.id}`,
+    .update({
+      status: "cancelled",
+      error: "Cuisine désactivée — ticket ignoré",
+      claimed_by_device_id: null,
       updated_at: now,
     })
-    .select("id")
-    .maybeSingle();
-
+    .eq("job_type", "kitchen")
+    .in("status", ["pending", "printing", "needs_manual"])
+    .select("id");
   if (error) {
-    if (error.code === "23505") return { status: "duplicate" };
-    return { status: "error", message: error.message };
+    console.error("[print_jobs] cancel kitchen error:", error.message);
+    return 0;
   }
-  return { status: "enqueued", jobId: (data?.id as string) ?? "" };
+  const n = data?.length ?? 0;
+  if (n > 0) console.log(`[print_jobs] cancelled ${n} legacy kitchen job(s)`);
+  return n;
 }
 
 export async function claimNextPrintJob(
   deviceId: string = getLocalPrintDeviceId(),
 ): Promise<PrintJob | null> {
+  await cancelLegacyKitchenJobs();
+
   const nowIso = new Date().toISOString();
 
-  // Any receipt still in flight (pending OR printing, even during backoff)?
-  // Pause kitchen — logcat 22:52 showed kitchen attempt 3 while receipt retried.
-  const { data: receiptHold } = await supabase
-    .from("print_jobs")
-    .select("id")
-    .eq("job_type", "receipt")
-    .in("status", ["pending", "printing"])
-    .limit(1);
-
-  let query = supabase
+  const { data: candidates, error } = await supabase
     .from("print_jobs")
     .select("*")
     .eq("status", "pending")
+    .eq("job_type", "receipt")
     .lte("next_attempt_at", nowIso)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(5);
-
-  if (receiptHold && receiptHold.length > 0) {
-    query = query.eq("job_type", "receipt");
-  }
-
-  const { data: candidates, error } = await query;
 
   if (error) {
     console.error("[print_jobs] claim fetch error:", error.message);
@@ -545,8 +214,6 @@ export async function claimNextPrintJob(
 }
 
 export async function hasPendingReceiptJob(): Promise<boolean> {
-  // Include printing + pending-not-yet-due so kitchen stays paused during
-  // receipt backoff (was claiming kitchen between caisse retries).
   const { data } = await supabase
     .from("print_jobs")
     .select("id")
@@ -561,6 +228,7 @@ export async function hasActivePrintJobs(): Promise<boolean> {
   const { data } = await supabase
     .from("print_jobs")
     .select("id")
+    .eq("job_type", "receipt")
     .in("status", ["pending", "printing"])
     .limit(1);
   return !!(data && data.length > 0);
@@ -568,7 +236,6 @@ export async function hasActivePrintJobs(): Promise<boolean> {
 
 /**
  * Immediately reclaim all `printing` jobs claimed by this device (daemon restart).
- * Does not wait for STALE_PRINTING_MS — used on hub bootstrap.
  */
 export async function reclaimPrintingJobsForThisDevice(
   deviceId: string = getLocalPrintDeviceId(),
@@ -577,7 +244,8 @@ export async function reclaimPrintingJobsForThisDevice(
     .from("print_jobs")
     .select("*")
     .eq("status", "printing")
-    .eq("claimed_by_device_id", deviceId);
+    .eq("claimed_by_device_id", deviceId)
+    .eq("job_type", "receipt");
 
   if (error || !rows?.length) return [];
   const claimed: PrintJob[] = [];
@@ -615,6 +283,7 @@ export async function reclaimStalePrintingJobs(
     .from("print_jobs")
     .select("*")
     .eq("status", "printing")
+    .eq("job_type", "receipt")
     .lt("updated_at", cutoff);
 
   if (error) return [];
@@ -687,7 +356,6 @@ export async function schedulePrintJobRetry(
   return "pending";
 }
 
-/** Requeue interrupted kitchen (receipt preempt) without incrementing attempts. */
 export async function requeueInterruptedJob(jobId: string): Promise<void> {
   await supabase
     .from("print_jobs")
@@ -695,7 +363,7 @@ export async function requeueInterruptedJob(jobId: string): Promise<void> {
       status: "pending",
       next_attempt_at: new Date().toISOString(),
       claimed_by_device_id: null,
-      error: "Interrompu pour ticket caisse",
+      error: "Interrompu — reprise",
       updated_at: new Date().toISOString(),
     })
     .eq("id", jobId)
@@ -715,6 +383,7 @@ export async function retryAllNeedsManual(): Promise<number> {
       updated_at: now,
     })
     .eq("status", "needs_manual")
+    .eq("job_type", "receipt")
     .select("id");
   if (error) {
     console.error("[print_jobs] retry all error:", error.message);
@@ -728,6 +397,7 @@ export async function fetchNeedsManualJobs(): Promise<PrintJob[]> {
     .from("print_jobs")
     .select("*")
     .eq("status", "needs_manual")
+    .eq("job_type", "receipt")
     .order("created_at", { ascending: false });
   if (error) return [];
   return (data ?? []).map(mapJobRow);
@@ -737,37 +407,13 @@ export async function fetchRecentPrintJobs(limit = 30): Promise<PrintJob[]> {
   const { data, error } = await supabase
     .from("print_jobs")
     .select("*")
+    .eq("job_type", "receipt")
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) return [];
   return (data ?? []).map(mapJobRow);
 }
 
-export async function patchOrderKitchenFingerprints(
-  tableId: string,
-  fingerprints: Record<string, string>,
-): Promise<void> {
-  const store = useTableOrdersStore.getState();
-  const current = store.orders[tableId];
-  if (!current || current.length === 0) return;
-
-  const printedAt = new Date().toISOString();
-  const next = current.map((item) => {
-    const fp = fingerprints[item.id];
-    if (!fp) return item;
-    if (computeKitchenFingerprint(item) !== fp) return item;
-    return {
-      ...item,
-      kitchenFingerprint: fp,
-      kitchenPrintedAt: printedAt,
-    };
-  });
-
-  store._patchOrder(tableId, next);
-  await store.flushOrder(tableId);
-}
-
-/** Legacy aliases for Admin / old worker */
 export async function markKitchenJobDone(jobId: string): Promise<void> {
   return markPrintJobDone(jobId);
 }
@@ -785,6 +431,7 @@ export async function requeueFailedKitchenJob(jobId: string): Promise<void> {
       updated_at: now,
     })
     .eq("id", jobId)
+    .eq("job_type", "receipt")
     .in("status", ["needs_manual", "cancelled"]);
 }
 
@@ -805,8 +452,8 @@ function mapJobRow(row: any): PrintJob {
   return {
     id: row.id as string,
     table_id: (row.table_id as string | null) ?? null,
-    job_type: (row.job_type as PrintJobType) ?? "kitchen",
-    priority: (row.priority as number) ?? PRIORITY_KITCHEN,
+    job_type: (row.job_type as PrintJobType) ?? "receipt",
+    priority: (row.priority as number) ?? PRIORITY_RECEIPT,
     printer_id: (row.printer_id as string | null) ?? null,
     printer_name: (row.printer_name as string | null) ?? null,
     mac_address: (row.mac_address as string | null) ?? null,
