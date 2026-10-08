@@ -7,7 +7,7 @@
       "VITE_SUPABASE_URL": "https://jdfvgalojwylmbidrplq.supabase.co",
       "VITE_SUPABASE_ANON_KEY": "sb_publishable_eOJg1nFSt1251mkULPSgbg_xquu7E-v",
       "VITE_CLOUDINARY_CLOUD_NAME": "xhr9fllm",
-      "VITE_CLOUDINARY_UPLOAD_PRESET": "ml_default"
+      "VITE_CLOUDINARY_UPLOAD_PRESET": "zpikin"
     }
   }
 }
