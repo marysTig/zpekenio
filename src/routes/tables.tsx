@@ -289,7 +289,7 @@ function SurPlacePage() {
                         onClick={() => setCheckoutTable({ id: table.id, number: table.number })}
                         className="flex-1 rounded-lg bg-emerald-600 py-2 text-xs font-semibold text-white hover:bg-emerald-700 active:scale-95"
                       >
-                        Valider
+                        Encaisser
                       </button>
                     )}
                     <button
