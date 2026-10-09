@@ -4,13 +4,15 @@ import { useTableStore, type TableItem } from "@/lib/tableStore";
 
 export function TableManager() {
   const {
-    tables,
-    rooms,
+    tables: _tables,
+    rooms: _rooms,
     loading,
     addTable,
     updateTable,
     deleteTable,
   } = useTableStore();
+  const tables = _tables ?? [];
+  const rooms = _rooms ?? [];
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

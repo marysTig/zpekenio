@@ -80,8 +80,8 @@ export function MenuManager() {
   const isTouchUi = isMobile || usePrefersCoarsePointer();
   const [view, setView] = useState<MenuView>("home");
   const {
-    products,
-    categories,
+    products: _products,
+    categories: _categories,
     loading,
     addCategory,
     updateCategory,
@@ -92,6 +92,9 @@ export function MenuManager() {
     deleteProduct,
     reorderProducts,
   } = useMenuStore();
+  // Guard against undefined during initial render on mobile (Capacitor WebView)
+  const products = _products ?? [];
+  const categories = _categories ?? [];
 
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [newCatName, setNewCatName] = useState("");

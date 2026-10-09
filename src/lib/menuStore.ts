@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
 import { type Product } from "@/data/menu";
@@ -145,21 +145,28 @@ async function _initMenuStore(
 // API publique identique à l'ancienne version — aucun impact sur les composants
 
 export function useMenuStore() {
-  const { products, categories, loading, setProducts, setCategories, setLoading } = useMenuGlobalState();
+  const { products: _products, categories: _categories, loading, setProducts, setCategories, setLoading } = useMenuGlobalState();
+  // Always guarantee arrays — zustand can theoretically return undefined on first
+  // render inside a Capacitor WebView that interrupts React's reconciler.
+  const products = _products ?? [];
+  const categories = _categories ?? [];
 
   // Initialise le store et les souscriptions Realtime une seule fois
   useEffect(() => {
     _initMenuStore(setCategories, setProducts, setLoading);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const reload = useCallback(async () => {
+  // Stable reload — reads setters directly from Zustand store so no deps array
+  // that could be undefined on Android Capacitor WebView initial render.
+  const reload = async () => {
+    const { setCategories: sc, setProducts: sp } = useMenuGlobalState.getState();
     const [cats, prods] = await Promise.all([
       fetchCategoriesFromDB(),
       fetchProductsFromDB(),
     ]);
-    setCategories(cats);
-    setProducts(prods);
-  }, [setCategories, setProducts]);
+    sc(cats);
+    sp(prods);
+  };
 
   // ── CRUD Catégories ─────────────────────────────────────────────
 
