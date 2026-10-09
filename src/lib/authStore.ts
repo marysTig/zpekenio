@@ -152,7 +152,18 @@ export const useSessionStore = create<SessionState>()(
         return { ok: true };
       },
 
-      logoutUser: () => set({ currentUser: null }),
+      logoutUser: () => {
+        // Clear localStorage immediately so persist middleware cannot re-hydrate
+        // the old session if the page is reloaded before the next setItem call.
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('pos-session-storage');
+          } catch {
+            // Ignore
+          }
+        }
+        set({ currentUser: null });
+      },
     }),
     {
       name: 'pos-session-storage',

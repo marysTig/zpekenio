@@ -1,6 +1,5 @@
 import { Bell, Search, User, LogOut } from "lucide-react";
 import { useSessionStore } from "@/lib/authStore";
-import { useNavigate } from "@tanstack/react-router";
 
 type TopBarProps = {
   query: string;
@@ -10,7 +9,6 @@ type TopBarProps = {
 export function TopBar({ query, onQueryChange }: TopBarProps) {
   const currentUser = useSessionStore(s => s.currentUser);
   const logoutUser = useSessionStore(s => s.logoutUser);
-  const navigate = useNavigate();
 
   return (
     <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border bg-card px-5 py-3 lg:flex lg:justify-between">
@@ -41,7 +39,7 @@ export function TopBar({ query, onQueryChange }: TopBarProps) {
           type="button"
           onClick={() => {
             logoutUser();
-            navigate({ to: "/" });
+            window.location.replace("/tables");
           }}
           className="flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-3 transition-colors hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
           title="Déconnexion"

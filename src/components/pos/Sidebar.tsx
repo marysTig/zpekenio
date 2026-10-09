@@ -5,7 +5,7 @@ import {
   Utensils,
   ShoppingBag,
 } from "lucide-react";
-import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useTableStore } from "@/lib/tableStore";
 import { useSessionStore } from "@/lib/authStore";
 
@@ -30,7 +30,6 @@ export function Sidebar(_props: SidebarProps) {
   const currentUser = useSessionStore(s => s.currentUser);
   const logoutUser = useSessionStore(s => s.logoutUser);
   const role = currentUser?.role ?? "caisse";
-  const navigate = useNavigate();
   
   const emporterRoom = rooms.find(r => r.name.toLowerCase() === "emporter");
   const activeEmporterCount = emporterRoom ? tables.filter(t => t.roomId === emporterRoom.id && t.status !== "libre").length : 0;
@@ -99,7 +98,7 @@ export function Sidebar(_props: SidebarProps) {
           title="Déconnexion"
           onClick={() => {
             logoutUser();
-            navigate({ to: "/" });
+            window.location.replace("/tables");
           }}
           className="mt-3 flex w-full items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:justify-start"
         >

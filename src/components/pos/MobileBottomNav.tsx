@@ -1,5 +1,5 @@
 import { Armchair, Utensils, ShoppingBag, LogOut, ChefHat } from "lucide-react";
-import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useTableStore } from "@/lib/tableStore";
 import { useSessionStore } from "@/lib/authStore";
 
@@ -18,7 +18,6 @@ export function MobileBottomNav(_props: MobileBottomNavProps) {
   const currentUser = useSessionStore(s => s.currentUser);
   const logoutUser = useSessionStore(s => s.logoutUser);
   const role = currentUser?.role ?? "caisse";
-  const navigate = useNavigate();
   
   const emporterRoom = rooms.find(r => r.name.toLowerCase() === "emporter");
   const activeEmporterCount = emporterRoom ? tables.filter(t => t.roomId === emporterRoom.id && t.status !== "libre").length : 0;
@@ -51,7 +50,7 @@ export function MobileBottomNav(_props: MobileBottomNavProps) {
       <button
         onClick={() => {
           logoutUser();
-          navigate({ to: "/" });
+          window.location.replace("/tables");
         }}
         title="Déconnexion"
         className="relative flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors text-sidebar-foreground/50 hover:text-destructive active:scale-95"
