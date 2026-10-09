@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChefHat, Utensils, Armchair, BarChart3, Menu, X, Users, UserCircle, Printer as PrinterIcon, Plus } from "lucide-react";
 import { MenuManager } from "@/components/admin/MenuManager";
-import { TableManager } from "@/components/admin/TableManager";
 import { ZReport } from "@/components/admin/ZReport";
 import { AdminLogin } from "@/components/auth/AdminLogin";
 import { useAuthStore } from "@/lib/authStore";
@@ -15,11 +14,10 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "menu" | "tables" | "rapport" | "utilisateurs" | "imprimantes" | "profil" | "supplements";
+type Tab = "menu" | "rapport" | "utilisateurs" | "imprimantes" | "profil" | "supplements";
 
 const navItems = [
   { id: "menu"         as const, icon: Utensils,    label: "Gestion du Menu" },
-  { id: "tables"       as const, icon: Armchair,    label: "Gestion des Tables" },
   { id: "rapport"      as const, icon: BarChart3,   label: "Rapport Z" },
   { id: "utilisateurs" as const, icon: Users,       label: "Utilisateurs" },
   { id: "imprimantes"  as const, icon: PrinterIcon, label: "Imprimantes" },
@@ -107,7 +105,6 @@ function AdminPage() {
           )}
           <h1 className="text-lg font-semibold">
             {activeTab === "menu"         && "Gestion du Menu"}
-            {activeTab === "tables"       && "Gestion des Tables"}
             {activeTab === "rapport"      && "Rapport Z"}
             {activeTab === "utilisateurs" && "Gestion des Utilisateurs"}
             {activeTab === "imprimantes"  && "Imprimantes"}
@@ -123,7 +120,6 @@ function AdminPage() {
               <MenuManager />
             </div>
           )}
-          {activeTab === "tables"       && <TableManager />}
           {activeTab === "rapport"      && <ZReport />}
           {activeTab === "utilisateurs" && <UserManager />}
           {activeTab === "imprimantes"  && <PrinterManager />}
