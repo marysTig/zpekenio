@@ -23,6 +23,7 @@ import {
 import { PrintFailureBanner } from "../components/pos/PrintFailureBanner";
 import { HubForegroundSync } from "../components/pos/HubForegroundSync";
 import { useSessionStore } from "../lib/authStore";
+import { UserLogin } from "../components/auth/UserLogin";
 import {
   isLocalDevicePrimaryHub,
   usePrintSettingsStore,
@@ -142,6 +143,9 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const currentUser = useSessionStore((s) => s.currentUser);
   const isLoggedIn = !!currentUser;
+  
+  const routerState = useRouter();
+  const isAdminRoute = routerState.state.location.pathname.startsWith("/admin");
   // Ensures print_settings loads for hub ownership (worker mounts when primary)
   const { isPrimaryHub, loading: printSettingsLoading } = usePrintSettingsStore();
 
@@ -201,8 +205,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      {!isLoggedIn && !isAdminRoute ? (
+        <UserLogin />
+      ) : (
+        <Outlet />
+      )}
       <HubForegroundSync />
       {/* Print queue daemon + failure banner (login OR primary hub) */}
       {mountPrintStack && (
