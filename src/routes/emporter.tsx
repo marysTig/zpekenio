@@ -130,11 +130,7 @@ function EmporterPage() {
       let targetTableNumber = 0;
 
       if (freeTable) {
-        await updateTable(freeTable.id, {
-          status: "occupee",
-          occupiedSince: new Date().toISOString(),
-          orderTotal: 0
-        });
+        // Réutiliser le slot libre sans le marquer occupé — la validation le fera
         targetTableId = freeTable.id;
         targetTableNumber = freeTable.number;
       } else {
@@ -142,15 +138,12 @@ function EmporterPage() {
         const maxNumber = allRoomTables.reduce((max, t) => Math.max(max, t.number), 0);
         const nextNumber = maxNumber + 1;
         
+        // Créer en "libre" : n'apparaît pas dans la liste tant que non validée
         targetTableId = await addTable({
           number: nextNumber,
           seats: 1,
-          status: "occupee",
+          status: "libre",
           roomId: room!.id,
-        });
-        
-        await updateTable(targetTableId, {
-          occupiedSince: new Date().toISOString()
         });
         targetTableNumber = nextNumber;
       }

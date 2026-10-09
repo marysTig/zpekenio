@@ -477,9 +477,9 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   useEffect(() => {
     let mounted = true;
 
-    // Seulement si la table est censée être occupée et que c'est la caisse qui ouvre
+    // Seulement si la table est déjà occupée (validée) et que c'est la caisse qui ouvre
+    // Ne pas fetcher pour une table "libre" (brouillon non encore validé)
     if (isOccupied && !isServeur) {
-      // Différer le fetch de 16ms pour laisser le premier rendu s'afficher
       const fetchOrderData = async (retries = 3) => {
         for (let i = 0; i < retries; i++) {
           if (!mounted) return;
@@ -492,23 +492,18 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
             
             if (error) {
               console.error("[CASHIER ORDER] Erreur SELECT table_orders:", error);
-              break; // Arrêter les retries si erreur réseau/SQL grave
+              break;
             }
 
             if (data && data.items && (data.items as CartItem[]).length > 0) {
-              console.log("[CASHIER ORDER] Données récupérées avec succès:", data.items);
               if (mounted) {
                 _patchOrder(tableId, data.items as CartItem[]);
                 _patchNote(tableId, data.note || "");
-                // Pour compatibilité avec les anciennes données qui n'ont peut-être pas la colonne:
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 _patchSupplements(tableId, ((data as any).global_supplements as GlobalSupplement[]) || []);
               }
-              break; // Succès, on arrête les retries
+              break;
             } else if (i < retries - 1) {
-              // Si pas de données mais que la table est "occupee", on attend un peu
-              // pour pallier au timing (flushOrder du Serveur peut être en cours)
-              console.log(`[CASHIER ORDER] Aucun item trouvé, retry ${i + 1}/${retries}...`);
               await new Promise(r => setTimeout(r, 800));
             }
           } catch (err) {
