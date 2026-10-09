@@ -104,7 +104,15 @@ async function _initMenuStore(
   setProducts: (p: Product[]) => void,
   setLoading: (l: boolean) => void,
 ) {
-  if (_menuInitialized) return;
+  if (_menuInitialized) {
+    // If already initialized but data is empty (e.g. after hard reload), force re-fetch
+    const { categories, products } = useMenuGlobalState.getState();
+    if (categories.length === 0 && products.length === 0) {
+      _menuInitialized = false;
+    } else {
+      return;
+    }
+  }
   _menuInitialized = true;
 
   setLoading(true);
@@ -208,8 +216,8 @@ export function useMenuStore() {
       price: prod.price,
       image_url: prod.image || null,
       available: prod.available,
-      options: prod.options?.length ? prod.options : null,
-      ingredients: prod.ingredients?.trim() || null,
+      options: Array.isArray(prod.options) && prod.options.length > 0 ? prod.options : null,
+      ingredients: typeof prod.ingredients === 'string' ? prod.ingredients.trim() || null : null,
     });
     if (error) throw new Error(error.message);
     await reload();
@@ -227,8 +235,8 @@ export function useMenuStore() {
     if (prod.image !== undefined) payload["image_url"] = prod.image || null;
     if (prod.available !== undefined) payload["available"] = prod.available;
     if (cat !== undefined) payload["category_id"] = cat.id;
-    if (prod.options !== undefined) payload["options"] = prod.options?.length ? prod.options : null;
-    if (prod.ingredients !== undefined) payload["ingredients"] = prod.ingredients?.trim() || null;
+    if (prod.options !== undefined) payload["options"] = Array.isArray(prod.options) && prod.options.length > 0 ? prod.options : null;
+    if (prod.ingredients !== undefined) payload["ingredients"] = typeof prod.ingredients === 'string' ? prod.ingredients.trim() || null : null;
 
     const { error } = await supabase.from("products").update(payload).eq("id", id);
     if (error) throw new Error(error.message);
