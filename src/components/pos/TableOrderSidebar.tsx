@@ -318,7 +318,7 @@ function OrderListDesktop({
                   className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-success py-3.5 text-sm font-bold text-success-foreground shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0"
                 >
                   <CreditCard className="h-4 w-4" />
-                  Encaisser
+                  Valider
                 </button>
               )}
             </div>
@@ -607,12 +607,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   };
 
   const handleValidateOrder = async () => {
-    console.log("[SERVER ORDER] Creating order");
-    console.log("[SERVER ORDER] Table ID:", tableId);
-    console.log("[SERVER ORDER] Items:", items);
-
-    // Flush immédiat vers Supabase — garantit que la Caisse verra les items
-    // dans table_orders AVANT de recevoir le statut "occupee".
+    // Flush immédiat vers Supabase
     await flushOrder(tableId);
 
     const now = new Date().toISOString();
@@ -626,15 +621,25 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       for (const mId of mergedIds) {
         const mTable = tables.find(t => t.id === mId);
         if (mTable?.status !== "occupee") {
-          await updateTable(mId, {
-            status: "occupee",
-            occupiedSince: now
-          });
+          await updateTable(mId, { status: "occupee", occupiedSince: now });
         }
       }
     }
 
-    toast.success(isOccupied ? "Commande mise à jour" : "Commande enregistrée");
+    // Imprimer le ticket de cuisine immédiatement
+    const orderLabel = isEmporter
+      ? `À EMPORTER — Commande #${tableNumber}`
+      : `SUR PLACE — Ticket #${tableNumber}`;
+    await runCashierReceiptPrint({
+      printers,
+      items,
+      total,
+      label: orderLabel,
+      globalSupplements: activeSupplements,
+      tableId,
+    });
+
+    toast.success(isOccupied ? "Commande mise à jour" : "Commande enregistrée — ticket imprimé");
     onClose();
   };
 
@@ -900,7 +905,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
                             className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-success py-3.5 text-sm font-bold text-success-foreground shadow-lg transition-all active:scale-[0.98]"
                           >
                             <CreditCard className="h-4 w-4" />
-                            Encaisser
+                            Valider
                           </button>
                         )}
                       </div>
