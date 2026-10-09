@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { ShoppingBag, Clock, Ban } from "lucide-react";
 import { Sidebar } from "@/components/pos/Sidebar";
@@ -21,6 +21,11 @@ import { type GlobalSupplement } from "@/lib/globalSupplementsStore";
 import { playCashSound } from "@/lib/posSounds";
 
 export const Route = createFileRoute("/emporter")({
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      open: search.open as string | undefined,
+    }
+  },
   head: () => ({
     meta: [{ title: "Emporter — Z-pekenio" }],
   }),
@@ -33,8 +38,23 @@ function EmporterPage() {
   const { printers } = usePrinterStore();
   const currentUser = useSessionStore(s => s.currentUser);
 
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+
   const [activeTable, setActiveTable] = useState<{ id: string; number: number } | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<{ id: string; number: number } | null>(null);
+
+  // Auto-open sidebar if 'open' search param is present
+  useEffect(() => {
+    if (search.open && tableData.length > 0) {
+      const table = tableData.find(t => t.id === search.open);
+      if (table && !activeTable) {
+        setActiveTable({ id: table.id, number: table.number });
+        // Clear the search param so it doesn't reopen if closed
+        navigate({ to: "/emporter", replace: true });
+      }
+    }
+  }, [search.open, tableData, activeTable, navigate]);
 
   const emporterRoom = rooms.find(r => r.name.toLowerCase() === "emporter");
   const emporterTables = emporterRoom 

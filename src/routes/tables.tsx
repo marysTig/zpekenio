@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Armchair, Clock, Ban, Plus } from "lucide-react";
 import { Sidebar } from "@/components/pos/Sidebar";
@@ -21,6 +21,11 @@ import { type GlobalSupplement } from "@/lib/globalSupplementsStore";
 import { playCashSound } from "@/lib/posSounds";
 
 export const Route = createFileRoute("/tables")({
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      open: search.open as string | undefined,
+    }
+  },
   head: () => ({
     meta: [{ title: "Sur place — Z-pekenio" }],
   }),
@@ -33,9 +38,24 @@ function SurPlacePage() {
   const { printers } = usePrinterStore();
   const currentUser = useSessionStore(s => s.currentUser);
 
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+
   const [activeTable, setActiveTable] = useState<{ id: string; number: number } | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<{ id: string; number: number } | null>(null);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+
+  // Auto-open sidebar if 'open' search param is present
+  useEffect(() => {
+    if (search.open && tableData.length > 0) {
+      const table = tableData.find(t => t.id === search.open);
+      if (table && !activeTable) {
+        setActiveTable({ id: table.id, number: table.number });
+        // Clear the search param so it doesn't reopen if closed
+        navigate({ to: "/tables", replace: true });
+      }
+    }
+  }, [search.open, tableData, activeTable, navigate]);
 
   // Identify or create the "Sur place" room
   const surPlaceRoom = rooms.find(r => r.name.toLowerCase() === "sur place");
