@@ -4,7 +4,6 @@ import { useTableStore } from "@/lib/tableStore";
 import { useSessionStore } from "@/lib/authStore";
 
 const nav = [
-  { label: "Accueil", icon: ChefHat, to: "/" },
   { label: "Sur place", icon: Armchair,    to: "/tables" },
   { label: "Emporter", icon: ShoppingBag, to: "/emporter" },
 ];

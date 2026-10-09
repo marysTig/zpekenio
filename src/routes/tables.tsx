@@ -106,45 +106,54 @@ function SurPlacePage() {
     return () => { mounted = false; };
   }, [checkoutTable, _patchOrder, _patchNote, _patchSupplements]);
 
-  const handleNewOrder = async () => {
+  const handleCreateOrder = async (type: "sur-place" | "emporter") => {
     setIsCreatingOrder(true);
     try {
-      let roomId = surPlaceRoom?.id;
-      if (!roomId) {
-        roomId = await addRoom("Sur place");
+      const roomName = type === "sur-place" ? "Sur place" : "Emporter";
+      let room = rooms.find(r => r.name.toLowerCase() === roomName.toLowerCase());
+      
+      if (!room) {
+        const newRoomId = await addRoom(roomName);
+        room = { id: newRoomId, name: roomName };
       }
 
-      // Check if there is an abandoned/empty "libre" ticket we can reuse
-      const freeTable = tableData.find(t => t.roomId === roomId && t.status === "libre");
+      const freeTable = tableData.find(t => t.roomId === room?.id && t.status === "libre");
+      let targetTableId = "";
+      let targetTableNumber = 0;
+
       if (freeTable) {
         await updateTable(freeTable.id, {
           status: "occupee",
           occupiedSince: new Date().toISOString(),
           orderTotal: 0
         });
-        setActiveTable({ id: freeTable.id, number: freeTable.number });
+        targetTableId = freeTable.id;
+        targetTableNumber = freeTable.number;
       } else {
-        // Find highest number used in this room so far to avoid duplicates
-        const allRoomTables = tableData.filter(t => t.roomId === roomId);
+        const allRoomTables = tableData.filter(t => t.roomId === room?.id);
         const maxNumber = allRoomTables.reduce((max, t) => Math.max(max, t.number), 0);
         const nextNumber = maxNumber + 1;
         
-        const newTableId = await addTable({
+        targetTableId = await addTable({
           number: nextNumber,
           seats: 1,
           status: "occupee",
-          roomId,
+          roomId: room!.id,
         });
         
-        // Ensure it gets the occupied timestamp
-        await updateTable(newTableId, {
+        await updateTable(targetTableId, {
           occupiedSince: new Date().toISOString()
         });
+        targetTableNumber = nextNumber;
+      }
 
-        setActiveTable({ id: newTableId, number: nextNumber });
+      if (type === "sur-place") {
+        setActiveTable({ id: targetTableId, number: targetTableNumber });
+      } else {
+        navigate({ to: "/emporter", search: { open: targetTableId } });
       }
     } catch (error) {
-      console.error("Erreur création commande sur place:", error);
+      console.error("Erreur création commande:", error);
       toast.error("Impossible de créer la commande.");
     } finally {
       setIsCreatingOrder(false);
@@ -219,14 +228,24 @@ function SurPlacePage() {
               <p className="text-xs text-muted-foreground">Commandes en salle</p>
             </div>
           </div>
-          <button
-            onClick={handleNewOrder}
-            disabled={isCreatingOrder}
-            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-            Nouvelle Commande
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleCreateOrder("sur-place")}
+              disabled={isCreatingOrder}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4 hidden sm:block" />
+              Sur Place
+            </button>
+            <button
+              onClick={() => handleCreateOrder("emporter")}
+              disabled={isCreatingOrder}
+              className="flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-orange-700 active:scale-95 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4 hidden sm:block" />
+              À Emporter
+            </button>
+          </div>
         </header>
 
         {/* Content */}

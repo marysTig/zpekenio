@@ -73,7 +73,7 @@ export function buildReceiptEscPos(params: {
     ALIGN_CENTER +
     DOUBLE_HEIGHT_WIDTH +
     BOLD_ON +
-    (tableNumber ? `COMMANDE ${tableNumber}` : "NOUVELLE COMMANDE") + "\n" +
+    (tableNumber ? String(tableNumber).toUpperCase() : "NOUVELLE COMMANDE") + "\n" +
     NORMAL_SIZE +
     BOLD_OFF;
 

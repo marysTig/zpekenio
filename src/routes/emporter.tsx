@@ -1,6 +1,6 @@
 import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { ShoppingBag, Clock, Ban } from "lucide-react";
+import { ShoppingBag, Clock, Ban, Plus } from "lucide-react";
 import { Sidebar } from "@/components/pos/Sidebar";
 import { MobileBottomNav } from "@/components/pos/MobileBottomNav";
 import { TableOrderSidebar } from "@/components/pos/TableOrderSidebar";
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/emporter")({
 });
 
 function EmporterPage() {
-  const { tables: tableData, loading, updateTable, rooms } = useTableStore();
+  const { tables: tableData, loading, updateTable, rooms, addRoom, addTable } = useTableStore();
   const { orders, orderNotes, orderSupplements, clearOrder, _patchOrder, _patchNote, _patchSupplements } = useTableOrdersStore();
   const { printers } = usePrinterStore();
   const currentUser = useSessionStore(s => s.currentUser);
@@ -43,6 +43,7 @@ function EmporterPage() {
 
   const [activeTable, setActiveTable] = useState<{ id: string; number: number } | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<{ id: string; number: number } | null>(null);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
 
   // Auto-open sidebar if 'open' search param is present
   useEffect(() => {
@@ -113,6 +114,60 @@ function EmporterPage() {
     });
   };
 
+  const handleCreateOrder = async (type: "sur-place" | "emporter") => {
+    setIsCreatingOrder(true);
+    try {
+      const roomName = type === "sur-place" ? "Sur place" : "Emporter";
+      let room = rooms.find(r => r.name.toLowerCase() === roomName.toLowerCase());
+      
+      if (!room) {
+        const newRoomId = await addRoom(roomName);
+        room = { id: newRoomId, name: roomName };
+      }
+
+      const freeTable = tableData.find(t => t.roomId === room?.id && t.status === "libre");
+      let targetTableId = "";
+      let targetTableNumber = 0;
+
+      if (freeTable) {
+        await updateTable(freeTable.id, {
+          status: "occupee",
+          occupiedSince: new Date().toISOString(),
+          orderTotal: 0
+        });
+        targetTableId = freeTable.id;
+        targetTableNumber = freeTable.number;
+      } else {
+        const allRoomTables = tableData.filter(t => t.roomId === room?.id);
+        const maxNumber = allRoomTables.reduce((max, t) => Math.max(max, t.number), 0);
+        const nextNumber = maxNumber + 1;
+        
+        targetTableId = await addTable({
+          number: nextNumber,
+          seats: 1,
+          status: "occupee",
+          roomId: room!.id,
+        });
+        
+        await updateTable(targetTableId, {
+          occupiedSince: new Date().toISOString()
+        });
+        targetTableNumber = nextNumber;
+      }
+
+      if (type === "emporter") {
+        setActiveTable({ id: targetTableId, number: targetTableNumber });
+      } else {
+        navigate({ to: "/tables", search: { open: targetTableId } });
+      }
+    } catch (error) {
+      console.error("Erreur création commande:", error);
+      toast.error("Impossible de créer la commande.");
+    } finally {
+      setIsCreatingOrder(false);
+    }
+  };
+
   const handleQuickCheckout = async () => {
     if (!checkoutTable) return;
     
@@ -169,13 +224,33 @@ function EmporterPage() {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-            <ShoppingBag className="h-5 w-5 text-primary-foreground" />
+        <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
+              <ShoppingBag className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-foreground">À emporter</h1>
+              <p className="text-xs text-muted-foreground">Commandes en cours</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-foreground">À emporter</h1>
-            <p className="text-xs text-muted-foreground">Commandes en cours</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleCreateOrder("sur-place")}
+              disabled={isCreatingOrder}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4 hidden sm:block" />
+              Sur Place
+            </button>
+            <button
+              onClick={() => handleCreateOrder("emporter")}
+              disabled={isCreatingOrder}
+              className="flex items-center gap-2 rounded-lg bg-orange-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-orange-700 active:scale-95 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4 hidden sm:block" />
+              À Emporter
+            </button>
           </div>
         </header>
 
