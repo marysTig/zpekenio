@@ -32,10 +32,14 @@ type TableOrdersState = {
 
 // ── Debounced upsert — avoids flooding Supabase on every keystroke ─────────
 
+// Track tables that were recently written locally — ignore Realtime echo for 2s
+const localWriteTimestamps: Record<string, number> = {};
 const upsertTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 function scheduleUpsert(tableId: string, items: CartItem[], note: string, globalSupplements: GlobalSupplement[]) {
   clearTimeout(upsertTimers[tableId]);
+  // Mark this table as locally-written so we can ignore the Realtime echo
+  localWriteTimestamps[tableId] = Date.now();
   upsertTimers[tableId] = setTimeout(async () => {
     const { error } = await supabase.from("table_orders").upsert(
       { 
@@ -233,9 +237,18 @@ function handleTableOrderPayload(payload: PostgresPayload): void {
     // INSERT or UPDATE
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = payload.new as any;
-    store._patchOrder(row.table_id, row.items as CartItem[]);
-    store._patchNote(row.table_id, row.note ?? "");
-    store._patchSupplements(row.table_id, row.global_supplements ?? []);
+    const tableId = row.table_id as string;
+
+    // Ignore Realtime echo for 2 seconds after a local write
+    // This prevents the "disappear then reappear" flicker on item add
+    const lastWrite = localWriteTimestamps[tableId];
+    if (lastWrite && Date.now() - lastWrite < 2000) {
+      return;
+    }
+
+    store._patchOrder(tableId, row.items as CartItem[]);
+    store._patchNote(tableId, row.note ?? "");
+    store._patchSupplements(tableId, row.global_supplements ?? []);
   }
 }
 
