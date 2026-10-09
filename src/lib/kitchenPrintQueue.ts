@@ -73,6 +73,7 @@ export type EnqueueReceiptParams = {
   globalSupplements?: GlobalSupplement[];
   checkoutTs?: number;
   printers?: Printer[];
+  phone?: string;
 };
 
 /**
@@ -107,6 +108,7 @@ export async function enqueueReceipt(
     ...(params.globalSupplements?.length
       ? { globalSupplements: params.globalSupplements }
       : {}),
+    phone: params.phone,
   });
   const now = new Date().toISOString();
   const payload: PrintJobPayload = {

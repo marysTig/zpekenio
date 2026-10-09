@@ -24,8 +24,9 @@ export async function runCashierReceiptPrint(params: {
   label: string | number;
   globalSupplements?: GlobalSupplement[];
   tableId?: string;
+  phone?: string;
 }): Promise<CashierPrintResult> {
-  const { items, total, label, globalSupplements } = params;
+  const { items, total, label, globalSupplements, phone } = params;
   const errors: string[] = [];
 
   console.log("[CAISSE PRINT] Enqueue receipt (non-blocking)", {
@@ -76,6 +77,7 @@ export async function runCashierReceiptPrint(params: {
     items,
     total,
     printers: params.printers,
+    phone,
     ...(globalSupplements?.length ? { globalSupplements } : {}),
   });
 

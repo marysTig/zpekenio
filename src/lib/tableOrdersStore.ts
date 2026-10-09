@@ -11,19 +11,23 @@ type TableOrdersState = {
   orders: Record<string, CartItem[]>;
   orderNotes: Record<string, string>;
   orderSupplements: Record<string, GlobalSupplement[]>;
+  orderPhones: Record<string, string>;
   // Internal actions (used by realtime listener)
   _patchOrder: (tableId: string, items: CartItem[]) => void;
   _patchNote: (tableId: string, note: string) => void;
   _patchSupplements: (tableId: string, supplements: GlobalSupplement[]) => void;
+  _patchPhone: (tableId: string, phone: string) => void;
   _removeOrder: (tableId: string) => void;
   _setAll: (
     orders: Record<string, CartItem[]>, 
     notes: Record<string, string>,
-    supplements: Record<string, GlobalSupplement[]>
+    supplements: Record<string, GlobalSupplement[]>,
+    phones: Record<string, string>,
   ) => void;
-  // Public API — identical to the previous localStorage store
+  // Public API
   setOrder: (tableId: string, items: CartItem[]) => void;
   setOrderNote: (tableId: string, note: string) => void;
+  setOrderPhone: (tableId: string, phone: string) => void;
   setOrderSupplements: (tableId: string, supplements: GlobalSupplement[]) => void;
   flushOrder: (tableId: string) => Promise<void>;
   clearOrder: (tableId: string) => void;
@@ -35,6 +39,29 @@ type TableOrdersState = {
 // Track tables that were recently written locally — ignore Realtime echo for 2s
 const localWriteTimestamps: Record<string, number> = {};
 const upsertTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+// ── Phone/Note encoding helpers ───────────────────────────────────────────────
+// Phone is stored embedded in the note column: "TEL:0612345678|||<actual note>"
+// This avoids requiring a DB migration.
+
+const TEL_PREFIX = "TEL:";
+const TEL_SEP = "|||";
+
+export function encodeNoteWithPhone(phone: string, note: string): string {
+  if (phone.trim()) return `${TEL_PREFIX}${phone.trim()}${TEL_SEP}${note}`;
+  return note;
+}
+
+export function decodeNoteAndPhone(raw: string): { phone: string; note: string } {
+  if (raw.startsWith(TEL_PREFIX)) {
+    const sepIdx = raw.indexOf(TEL_SEP);
+    if (sepIdx !== -1) {
+      return { phone: raw.slice(TEL_PREFIX.length, sepIdx), note: raw.slice(sepIdx + TEL_SEP.length) };
+    }
+    return { phone: raw.slice(TEL_PREFIX.length), note: "" };
+  }
+  return { phone: "", note: raw };
+}
 
 function scheduleUpsert(tableId: string, items: CartItem[], note: string, globalSupplements: GlobalSupplement[]) {
   clearTimeout(upsertTimers[tableId]);
@@ -70,10 +97,11 @@ export const useTableOrdersStore = create<TableOrdersState>((set, get) => ({
   orders: {},
   orderNotes: {},
   orderSupplements: {},
+  orderPhones: {},
 
   // ── Internal ──────────────────────────────────────────────────────────────
 
-  _setAll: (orders, notes, supplements) => set({ orders, orderNotes: notes, orderSupplements: supplements }),
+  _setAll: (orders, notes, supplements, phones) => set({ orders, orderNotes: notes, orderSupplements: supplements, orderPhones: phones ?? {} }),
 
   _patchOrder: (tableId, items) =>
     set((state) => ({ orders: { ...state.orders, [tableId]: items } })),
@@ -84,38 +112,54 @@ export const useTableOrdersStore = create<TableOrdersState>((set, get) => ({
   _patchSupplements: (tableId, supplements) =>
     set((state) => ({ orderSupplements: { ...state.orderSupplements, [tableId]: supplements } })),
 
+  _patchPhone: (tableId, phone) =>
+    set((state) => ({ orderPhones: { ...state.orderPhones, [tableId]: phone } })),
+
   _removeOrder: (tableId) =>
     set((state) => {
       const orders = { ...state.orders };
       const orderNotes = { ...state.orderNotes };
       const orderSupplements = { ...state.orderSupplements };
+      const orderPhones = { ...state.orderPhones };
       delete orders[tableId];
       delete orderNotes[tableId];
       delete orderSupplements[tableId];
-      return { orders, orderNotes, orderSupplements };
+      delete orderPhones[tableId];
+      return { orders, orderNotes, orderSupplements, orderPhones };
     }),
 
   // ── Public API ────────────────────────────────────────────────────────────
 
   setOrder: (tableId, items) => {
     const note = get().orderNotes[tableId] ?? "";
+    const phone = get().orderPhones[tableId] ?? "";
     const supplements = get().orderSupplements[tableId] ?? [];
     set((s) => ({ orders: { ...s.orders, [tableId]: items } }));
-    scheduleUpsert(tableId, items, note, supplements);
+    scheduleUpsert(tableId, items, encodeNoteWithPhone(phone, note), supplements);
   },
 
   setOrderNote: (tableId, note) => {
     const items = get().orders[tableId] ?? [];
+    const phone = get().orderPhones[tableId] ?? "";
     const supplements = get().orderSupplements[tableId] ?? [];
     set((s) => ({ orderNotes: { ...s.orderNotes, [tableId]: note } }));
-    scheduleUpsert(tableId, items, note, supplements);
+    scheduleUpsert(tableId, items, encodeNoteWithPhone(phone, note), supplements);
+  },
+
+  setOrderPhone: (tableId, phone) => {
+    const items = get().orders[tableId] ?? [];
+    const note = get().orderNotes[tableId] ?? "";
+    const supplements = get().orderSupplements[tableId] ?? [];
+    set((s) => ({ orderPhones: { ...s.orderPhones, [tableId]: phone } }));
+    scheduleUpsert(tableId, items, encodeNoteWithPhone(phone, note), supplements);
   },
 
   setOrderSupplements: (tableId, supplements) => {
     const items = get().orders[tableId] ?? [];
     const note = get().orderNotes[tableId] ?? "";
+    const phone = get().orderPhones[tableId] ?? "";
     set((s) => ({ orderSupplements: { ...s.orderSupplements, [tableId]: supplements } }));
-    scheduleUpsert(tableId, items, note, supplements);
+    scheduleUpsert(tableId, items, encodeNoteWithPhone(phone, note), supplements);
   },
 
   // Upsert immédiat (sans debounce) — à appeler au moment de valider une commande
@@ -124,12 +168,13 @@ export const useTableOrdersStore = create<TableOrdersState>((set, get) => ({
     clearTimeout(upsertTimers[tableId]);
     const items = get().orders[tableId] ?? [];
     const note = get().orderNotes[tableId] ?? "";
+    const phone = get().orderPhones[tableId] ?? "";
     const supplements = get().orderSupplements[tableId] ?? [];
     const { error } = await supabase.from("table_orders").upsert(
       { 
         table_id: tableId, 
         items, 
-        note,
+        note: encodeNoteWithPhone(phone, note),
         global_supplements: supplements,
         updated_at: new Date().toISOString() 
       },
@@ -143,10 +188,12 @@ export const useTableOrdersStore = create<TableOrdersState>((set, get) => ({
       const orders = { ...state.orders };
       const orderNotes = { ...state.orderNotes };
       const orderSupplements = { ...state.orderSupplements };
+      const orderPhones = { ...state.orderPhones };
       delete orders[tableId];
       delete orderNotes[tableId];
       delete orderSupplements[tableId];
-      return { orders, orderNotes, orderSupplements };
+      delete orderPhones[tableId];
+      return { orders, orderNotes, orderSupplements, orderPhones };
     });
     deleteFromDB(tableId);
   },
@@ -215,15 +262,17 @@ async function resyncTableOrders(): Promise<void> {
   const orders: Record<string, CartItem[]> = {};
   const notes: Record<string, string> = {};
   const supplements: Record<string, GlobalSupplement[]> = {};
+  const phones: Record<string, string> = {};
   for (const row of data ?? []) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    orders[(row as any).table_id] = (row as any).items as CartItem[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    notes[(row as any).table_id] = (row as any).note ?? "";
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    supplements[(row as any).table_id] = ((row as any).global_supplements as GlobalSupplement[]) ?? [];
+    const r = row as any;
+    orders[r.table_id] = r.items as CartItem[];
+    const decoded = decodeNoteAndPhone(r.note ?? "");
+    notes[r.table_id] = decoded.note;
+    phones[r.table_id] = decoded.phone;
+    supplements[r.table_id] = (r.global_supplements as GlobalSupplement[]) ?? [];
   }
-  useTableOrdersStore.getState()._setAll(orders, notes, supplements);
+  useTableOrdersStore.getState()._setAll(orders, notes, supplements, phones);
 }
 
 // ── Payload handler (logique métier Realtime inchangée) ───────────────────────
@@ -240,14 +289,15 @@ function handleTableOrderPayload(payload: PostgresPayload): void {
     const tableId = row.table_id as string;
 
     // Ignore Realtime echo for 2 seconds after a local write
-    // This prevents the "disappear then reappear" flicker on item add
     const lastWrite = localWriteTimestamps[tableId];
     if (lastWrite && Date.now() - lastWrite < 2000) {
       return;
     }
 
+    const decoded = decodeNoteAndPhone(row.note ?? "");
     store._patchOrder(tableId, row.items as CartItem[]);
-    store._patchNote(tableId, row.note ?? "");
+    store._patchNote(tableId, decoded.note);
+    store._patchPhone(tableId, decoded.phone);
     store._patchSupplements(tableId, row.global_supplements ?? []);
   }
 }

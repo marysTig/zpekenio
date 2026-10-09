@@ -46,8 +46,9 @@ export function buildReceiptEscPos(params: {
   total: number;
   tableNumber?: string | number;
   globalSupplements?: GlobalSupplement[];
+  phone?: string;
 }): Uint8Array {
-  const { items, total, tableNumber, globalSupplements } = params;
+  const { items, total, tableNumber, globalSupplements, phone } = params;
   const now = new Date();
   const dateStr = now.toLocaleDateString("fr-FR", {
     day: "2-digit",
@@ -79,6 +80,9 @@ export function buildReceiptEscPos(params: {
 
   ticket += "\n" + ALIGN_LEFT;
   ticket += justify(`Date : ${dateStr}`, `Heure : ${timeStr}`) + "\n";
+  if (phone) {
+    ticket += `Tel : ${phone}\n`;
+  }
   ticket += SEP + "\n";
 
   ticket += ALIGN_LEFT + DOUBLE_HEIGHT_WIDTH + BOLD_ON;

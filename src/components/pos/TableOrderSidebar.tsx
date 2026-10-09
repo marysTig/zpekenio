@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Minus, Plus, ShoppingCart, Trash2, X, CheckCircle2, CreditCard, NotebookPen, ChevronsUpDown, Check, ChevronDown } from "lucide-react";
+import { Minus, Plus, ShoppingCart, Trash2, X, CheckCircle2, CreditCard, NotebookPen, ChevronsUpDown, Check, ChevronDown, Phone } from "lucide-react";
 import { CategoryTabs } from "./CategoryTabs";
 import { ProductGrid } from "./ProductGrid";
 import { ProductSearch } from "./ProductSearch";
@@ -69,6 +69,41 @@ function OrderNoteInput({ value, onChange }: OrderNoteInputProps) {
       placeholder="Allergie, instructions spéciales…"
       rows={2}
       className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary transition-colors"
+    />
+  );
+}
+
+// ── OrderPhoneInput ─────────────────────────────────────────────────────────────
+type OrderPhoneInputProps = {
+  value: string;
+  onChange: (phone: string) => void;
+};
+
+function OrderPhoneInput({ value, onChange }: OrderPhoneInputProps) {
+  const [localPhone, setLocalPhone] = useState(value);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    setLocalPhone(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (localPhone !== value) {
+      const timer = setTimeout(() => {
+        onChangeRef.current(localPhone);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [localPhone, value]);
+
+  return (
+    <input
+      type="tel"
+      placeholder="Numéro de téléphone (ex: 06...)"
+      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      value={localPhone}
+      onChange={(e) => setLocalPhone(e.target.value)}
     />
   );
 }
@@ -165,6 +200,8 @@ type OrderListDesktopProps = {
   mergedNumbers: string | null;
   items: CartItem[];
   orderNote: string;
+  orderPhone: string;
+  isEmporter: boolean;
   itemCount: number;
   total: number;
   isOccupied: boolean;
@@ -173,14 +210,15 @@ type OrderListDesktopProps = {
   increase: (id: string) => void;
   remove: (id: string) => void;
   onNoteChange: (note: string) => void;
+  onPhoneChange: (phone: string) => void;
   onValidate: () => void;
   onCheckout: () => void;
   onAddSupplement?: (item: CartItem) => void;
 };
 
 function OrderListDesktop({
-  tableNumber, mergedNumbers, items, orderNote, itemCount, total,
-  isOccupied, isServeur, decrease, increase, remove, onNoteChange, onValidate, onCheckout, onAddSupplement
+  tableNumber, mergedNumbers, items, orderNote, orderPhone, isEmporter, itemCount, total,
+  isOccupied, isServeur, decrease, increase, remove, onNoteChange, onPhoneChange, onValidate, onCheckout, onAddSupplement
 }: OrderListDesktopProps) {
 
   return (
@@ -287,6 +325,17 @@ function OrderListDesktop({
         )}
       </div>
       <div className="shrink-0 border-t border-border bg-card p-4 space-y-3 overflow-y-auto max-h-[55vh]">
+        {/* Phone number input pour Emporter */}
+        {isEmporter && (
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <Phone className="h-3.5 w-3.5" />
+              Téléphone du client
+            </label>
+            <OrderPhoneInput value={orderPhone} onChange={onPhoneChange} />
+          </div>
+        )}
+
         {/* Note globale de commande */}
         <div>
           <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
@@ -294,8 +343,8 @@ function OrderListDesktop({
             Note de commande
           </label>
           <OrderNoteInput value={orderNote} onChange={onNoteChange} />
-
         </div>
+
         <div className="flex items-center justify-between mt-4">
           <span className="text-sm text-muted-foreground">
             {itemCount} article{itemCount > 1 ? "s" : ""}
@@ -414,7 +463,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
     ? mergedIds.map(id => tables.find(t => t.id === id)?.number).filter(Boolean).join(", ")
     : null;
 
-  const { orders, orderNotes, orderSupplements, setOrder, setOrderNote, setOrderSupplements, flushOrder, clearOrder, _patchOrder, _patchNote, _patchSupplements } = useTableOrdersStore();
+  const { orders, orderNotes, orderPhones, orderSupplements, setOrder, setOrderNote, setOrderPhone, setOrderSupplements, flushOrder, clearOrder, _patchOrder, _patchNote, _patchPhone, _patchSupplements } = useTableOrdersStore();
   const { supplements: allGlobalSupplements } = useGlobalSupplementsStore();
 
   const [category, setCategory] = useState<Category>("Tous");
@@ -422,6 +471,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
 
   const items = orders[tableId] || [];
   const orderNote = orderNotes[tableId] || "";
+  const orderPhone = orderPhones[tableId] || "";
   const activeSupplements = orderSupplements[tableId] || [];
   const total = cartSubtotal(items);
 
@@ -498,7 +548,9 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
             if (data && data.items && (data.items as CartItem[]).length > 0) {
               if (mounted) {
                 _patchOrder(tableId, data.items as CartItem[]);
-                _patchNote(tableId, data.note || "");
+                const decoded = decodeNoteAndPhone(data.note || "");
+                _patchNote(tableId, decoded.note);
+                _patchPhone(tableId, decoded.phone);
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 _patchSupplements(tableId, ((data as any).global_supplements as GlobalSupplement[]) || []);
               }
@@ -519,7 +571,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
     return () => {
       mounted = false;
     };
-  }, [tableId, isOccupied, isServeur, _patchOrder, _patchNote, _patchSupplements]);
+  }, [tableId, isOccupied, isServeur, _patchOrder, _patchNote, _patchPhone, _patchSupplements]);
 
 
 
@@ -632,6 +684,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       label: orderLabel,
       globalSupplements: activeSupplements,
       tableId,
+      phone: orderPhone,
     });
 
     toast.success(isOccupied ? "Commande mise à jour" : "Commande enregistrée — ticket imprimé");
@@ -695,6 +748,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       label: receiptLabel,
       globalSupplements: activeSupplements,
       tableId,
+      phone: orderPhone,
     });
 
     onClose();
@@ -705,6 +759,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   // Stable callbacks pour les sous-composants
   const handleOpenCheckout = useCallback(() => setCheckoutOpen(true), []);
   const handleNoteChange = useCallback((note: string) => setOrderNote(tableId, note), [tableId, setOrderNote]);
+  const handlePhoneChange = useCallback((phone: string) => setOrderPhone(tableId, phone), [tableId, setOrderPhone]);
 
   const handleConfirmSupplement = useCallback((
     id: string,
@@ -746,6 +801,8 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
             mergedNumbers={mergedNumbers}
             items={items}
             orderNote={orderNote}
+            orderPhone={orderPhone}
+            isEmporter={isEmporter}
             itemCount={itemCount}
             total={total}
             isOccupied={isOccupied}
@@ -754,6 +811,7 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
             increase={increase}
             remove={remove}
             onNoteChange={handleNoteChange}
+            onPhoneChange={handlePhoneChange}
             onValidate={handleValidateOrder}
             onCheckout={handleOpenCheckout}
             onAddSupplement={(item) => {
@@ -869,6 +927,17 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
                         setActiveSupplementItem(item);
                         setSupplementModalOpen(true);
                       }} />
+                    </div>
+                  )}
+
+                  {/* Phone Input (mobile) */}
+                  {isEmporter && (
+                    <div className="border-t border-border px-3 pt-3 pb-3">
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                        <Phone className="h-3.5 w-3.5" />
+                        Téléphone du client
+                      </label>
+                      <OrderPhoneInput value={orderPhone} onChange={handlePhoneChange} />
                     </div>
                   )}
 
