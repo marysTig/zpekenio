@@ -233,7 +233,7 @@ export function MenuManager() {
             </div>
             <span className="text-xl font-bold tracking-wide relative z-10">Gestion Catégorie</span>
             <span className="text-sm text-white/70 relative z-10">
-              {loading ? "…" : `${categories.length} catégories`}
+              {loading ? "…" : `${categories?.length || 0} catégories`}
             </span>
           </button>
 
@@ -265,7 +265,7 @@ export function MenuManager() {
             </div>
             <span className="text-xl font-bold tracking-wide relative z-10">Gestion Produit</span>
             <span className="text-sm text-white/70 relative z-10">
-              {loading ? "…" : `${products.length} produits`}
+              {loading ? "…" : `${products?.length || 0} produits`}
             </span>
           </button>
         </div>
@@ -330,7 +330,7 @@ export function MenuManager() {
         </form>
 
         {/* Drag hint */}
-        {!isTouchUi && !loading && categories.length > 1 && (
+        {!isTouchUi && !loading && (categories?.length || 0) > 1 && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground -mt-3">
             <GripVertical className="h-3.5 w-3.5" />
             Glissez les cartes pour réorganiser l'ordre des catégories
@@ -423,7 +423,7 @@ export function MenuManager() {
             <div className="flex items-center gap-2 p-4 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" /> Chargement…
             </div>
-          ) : categories.length === 0 ? (
+          ) : (categories?.length || 0) === 0 ? (
             <p className="p-4 text-xs text-muted-foreground">Aucune catégorie. Créez-en une depuis "Gestion Catégorie".</p>
           ) : (
             categories.map(cat => (
@@ -507,7 +507,7 @@ export function MenuManager() {
           ) : (
             <>
               {/* Drag hint */}
-              {!isTouchUi && filteredProducts.length > 1 && (
+              {!isTouchUi && (filteredProducts?.length || 0) > 1 && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
                   <GripVertical className="h-3.5 w-3.5" />
                   Glissez les cartes pour réorganiser l'ordre des produits
@@ -573,7 +573,7 @@ export function MenuManager() {
                     </div>
                   );
                 })}
-                {filteredProducts.length === 0 && effectiveCategory && (
+                {(filteredProducts?.length || 0) === 0 && effectiveCategory && (
                   <p className="col-span-full text-sm text-muted-foreground">
                     Aucun produit dans cette catégorie.
                   </p>

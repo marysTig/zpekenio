@@ -111,7 +111,7 @@ export function TableManager() {
                 </div>
               </div>
             ))}
-            {adminTables.length === 0 && (
+            {(adminTables?.length || 0) === 0 && (
               <p className="col-span-full text-sm text-muted-foreground">
                 Aucune table. Cliquez sur "Ajouter une table" pour commencer.
               </p>
