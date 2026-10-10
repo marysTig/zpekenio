@@ -77,7 +77,8 @@ function useDragReorder<T extends { id: string }>(
 
 export function MenuManager() {
   const isMobile = useIsMobile();
-  const isTouchUi = isMobile || usePrefersCoarsePointer();
+  const coarse = usePrefersCoarsePointer();
+  const isTouchUi = isMobile || coarse;
   const [view, setView] = useState<MenuView>("home");
   const {
     products: _products,
