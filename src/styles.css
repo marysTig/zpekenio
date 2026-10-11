@@ -73,7 +73,7 @@
   --card-foreground: oklch(0.211 0.032 264.2);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.211 0.032 264.2);
-  --primary: oklch(0.702 0.188 45.2);
+  --primary: oklch(0.75 0.18 80);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.211 0.032 264.2);
@@ -87,20 +87,20 @@
   --success-foreground: oklch(1 0 0);
   --border: oklch(0.923 0.006 264.5);
   --input: oklch(0.923 0.006 264.5);
-  --ring: oklch(0.702 0.188 45.2);
-  --chart-1: oklch(0.702 0.188 45.2);
+  --ring: oklch(0.75 0.18 80);
+  --chart-1: oklch(0.75 0.18 80);
   --chart-2: oklch(0.723 0.184 149.6);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(0.211 0.032 264.2);
   --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.702 0.188 45.2);
+  --sidebar-primary: oklch(0.75 0.18 80);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.279 0.041 260.031);
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.702 0.188 45.2);
+  --sidebar-ring: oklch(0.75 0.18 80);
 }
 
 
@@ -189,7 +189,7 @@
 }
 .blob-1 {
   width: 520px; height: 520px;
-  background: radial-gradient(circle, oklch(0.65 0.22 45) 0%, transparent 70%);
+  background: radial-gradient(circle, oklch(0.70 0.18 80) 0%, transparent 70%);
   top: -120px; left: -120px;
   animation-delay: 0s;
 }
@@ -252,10 +252,10 @@
 .admin-login-icon-ring {
   width: 72px; height: 72px;
   border-radius: 50%;
-  background: linear-gradient(135deg, oklch(0.70 0.20 45), oklch(0.58 0.22 30));
+  background: linear-gradient(135deg, oklch(0.75 0.18 80), oklch(0.65 0.18 75));
   display: grid;
   place-items: center;
-  box-shadow: 0 0 32px oklch(0.70 0.20 45 / 50%);
+  box-shadow: 0 0 32px oklch(0.75 0.18 80 / 50%);
   margin-bottom: 0.25rem;
 }
 .admin-login-chef-icon {
@@ -286,8 +286,8 @@
   gap: 0.35rem;
   padding: 0.35rem 0.9rem;
   border-radius: 99px;
-  background: oklch(0.65 0.22 45 / 20%);
-  border: 1px solid oklch(0.70 0.20 45 / 35%);
+  background: oklch(0.70 0.18 80 / 20%);
+  border: 1px solid oklch(0.75 0.18 80 / 35%);
   color: oklch(0.88 0.12 50);
   font-size: 0.72rem;
   font-weight: 600;
@@ -331,12 +331,12 @@
 }
 .admin-login-input::placeholder { color: oklch(1 0 0 / 25%); }
 .admin-login-input:focus {
-  border-color: oklch(0.70 0.20 45 / 70%);
-  box-shadow: 0 0 0 3px oklch(0.70 0.20 45 / 20%);
+  border-color: oklch(0.75 0.18 80 / 70%);
+  box-shadow: 0 0 0 3px oklch(0.75 0.18 80 / 20%);
   background: oklch(1 0 0 / 11%);
 }
 .admin-login-eye {
-    z-index: 10;
+  z-index: 10;
   position: absolute;
   right: 0.75rem;
   top: 50%;
@@ -388,8 +388,8 @@
   font-weight: 700;
   letter-spacing: 0.01em;
   color: white;
-  background: linear-gradient(135deg, oklch(0.72 0.20 45), oklch(0.58 0.22 28));
-  box-shadow: 0 4px 20px oklch(0.70 0.20 45 / 35%);
+  background: linear-gradient(135deg, oklch(0.80 0.16 85), oklch(0.65 0.18 75));
+  box-shadow: 0 4px 20px oklch(0.75 0.18 80 / 35%);
   transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
   margin-top: 0.25rem;
   display: flex;
@@ -400,7 +400,7 @@
 .admin-login-btn:hover:not(:disabled) {
   opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 8px 28px oklch(0.70 0.20 45 / 45%);
+  box-shadow: 0 8px 28px oklch(0.75 0.18 80 / 45%);
 }
 .admin-login-btn:active:not(:disabled) { transform: translateY(0); }
 .admin-login-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -451,7 +451,7 @@
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, oklch(0.70 0.20 45), oklch(0.60 0.25 30));
+  background: linear-gradient(135deg, oklch(0.75 0.18 80), oklch(0.65 0.18 75));
   flex-shrink: 0;
 }
 
@@ -553,8 +553,8 @@
 }
 
 .admin-profile-input-wrap input:focus {
-  border-color: oklch(0.70 0.20 45);
-  box-shadow: 0 0 0 3px oklch(0.70 0.20 45 / 15%);
+  border-color: oklch(0.75 0.18 80);
+  box-shadow: 0 0 0 3px oklch(0.75 0.18 80 / 15%);
 }
 
 .admin-profile-eye {
@@ -603,7 +603,7 @@
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 600;
-  background: linear-gradient(135deg, oklch(0.70 0.20 45), oklch(0.60 0.25 30));
+  background: linear-gradient(135deg, oklch(0.75 0.18 80), oklch(0.65 0.18 75));
   color: white;
   transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
   align-self: flex-start;
@@ -612,7 +612,7 @@
 .admin-profile-btn:hover:not(:disabled) {
   opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px oklch(0.70 0.20 45 / 40%);
+  box-shadow: 0 6px 20px oklch(0.75 0.18 80 / 40%);
 }
 
 .admin-profile-btn:active:not(:disabled) { transform: translateY(0); }
