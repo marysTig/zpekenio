@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Trash2, Edit2, Grid3X3, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Trash2, Edit2, Grid3X3, Loader2, X } from "lucide-react";
 import { useTableStore, type TableItem } from "@/lib/tableStore";
 
 export function TableManager() {
@@ -45,12 +45,28 @@ export function TableManager() {
         <button
           type="button"
           onClick={() => {
-            setIsEditing(null);
-            setShowTableForm(true);
+            if (showTableForm && !isEditing) {
+              setShowTableForm(false);
+            } else {
+              setIsEditing(null);
+              setShowTableForm(true);
+            }
           }}
-          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            showTableForm && !isEditing
+              ? "bg-muted text-foreground hover:bg-muted/80"
+              : "bg-primary text-primary-foreground hover:bg-primary/90"
+          }`}
         >
-          <Plus className="h-4 w-4" /> Ajouter une table
+          {showTableForm && !isEditing ? (
+            <>
+              <X className="h-4 w-4" /> Fermer
+            </>
+          ) : (
+            <>
+              <Plus className="h-4 w-4" /> Ajouter une table
+            </>
+          )}
         </button>
       </div>
 
@@ -149,9 +165,28 @@ function TableForm({
     });
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg bg-background p-4 border border-border max-w-md">
-      <h3 className="text-lg font-semibold">{initialData ? "Modifier" : "Nouvelle"} Table</h3>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl bg-card p-5 border border-border max-w-md shadow-sm">
+      <div className="flex items-center justify-between pb-2 border-b border-border/70">
+        <h3 className="text-lg font-bold text-foreground">{initialData ? "Modifier la" : "Nouvelle"} Table</h3>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="Fermer le formulaire (Échap)"
+          aria-label="Fermer"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium">Numéro / Nom de la table</label>

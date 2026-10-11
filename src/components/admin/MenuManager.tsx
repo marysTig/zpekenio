@@ -1,6 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useIsMobile, usePrefersCoarsePointer } from "@/hooks/use-mobile";
-import { Plus, Trash2, Edit2, ImageIcon, Layers, ShoppingBag, ArrowLeft, Tag, Folder, Box, Coffee, Utensils, ChefHat, Loader2, GripVertical } from "lucide-react";
+import { Plus, Trash2, Edit2, ImageIcon, Layers, ShoppingBag, ArrowLeft, Tag, Folder, Box, Coffee, Utensils, ChefHat, Loader2, GripVertical, X } from "lucide-react";
 import { ImageUploader } from "./ImageUploader";
 import { type Product } from "@/data/menu";
 import { useMenuStore, type CategoryItem } from "@/lib/menuStore";
@@ -464,11 +464,30 @@ export function MenuManager() {
             )}
           </div>
           <button
-            onClick={() => { setIsEditing(null); setShowProductForm(true); }}
+            onClick={() => {
+              if (showProductForm && !isEditing) {
+                setShowProductForm(false);
+              } else {
+                setIsEditing(null);
+                setShowProductForm(true);
+              }
+            }}
             disabled={!effectiveCategory}
-            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              showProductForm && !isEditing
+                ? "bg-muted text-foreground hover:bg-muted/80"
+                : "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            }`}
           >
-            <Plus className="h-4 w-4" /> Ajouter Produit
+            {showProductForm && !isEditing ? (
+              <>
+                <X className="h-4 w-4" /> Fermer
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" /> Ajouter Produit
+              </>
+            )}
           </button>
         </div>
 
@@ -675,9 +694,32 @@ function ProductForm({
     });
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-border bg-background p-4 max-w-md">
-      <h3 className="text-lg font-semibold">{initialData ? "Modifier" : "Nouveau"} Produit</h3>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 max-w-md shadow-sm">
+      <div className="flex items-center justify-between pb-2 border-b border-border/70">
+        <h3 className="text-lg font-bold text-foreground">
+          {initialData ? "Modifier le" : "Nouveau"} Produit
+        </h3>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="Fermer le formulaire (Échap)"
+          aria-label="Fermer"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
       {/* Nom */}
       <div className="flex flex-col gap-1.5">
