@@ -531,6 +531,10 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
     // Ne pas fetcher pour une table "libre" (brouillon non encore validé)
     if (isOccupied && !isServeur) {
       const fetchOrderData = async (retries = 3) => {
+        // Prevent overwriting if user already started adding items locally
+        const currentItems = useTableOrdersStore.getState().orders[tableId];
+        if (currentItems && currentItems.length > 0) return;
+
         for (let i = 0; i < retries; i++) {
           if (!mounted) return;
           try {
@@ -547,12 +551,16 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
 
             if (data && data.items && (data.items as CartItem[]).length > 0) {
               if (mounted) {
-                _patchOrder(tableId, data.items as CartItem[]);
-                const decoded = decodeNoteAndPhone(data.note || "");
-                _patchNote(tableId, decoded.note);
-                _patchPhone(tableId, decoded.phone);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                _patchSupplements(tableId, ((data as any).global_supplements as GlobalSupplement[]) || []);
+                // Double check they didn't add items during the await
+                const latestItems = useTableOrdersStore.getState().orders[tableId];
+                if (!latestItems || latestItems.length === 0) {
+                  _patchOrder(tableId, data.items as CartItem[]);
+                  const decoded = decodeNoteAndPhone(data.note || "");
+                  _patchNote(tableId, decoded.note);
+                  _patchPhone(tableId, decoded.phone);
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  _patchSupplements(tableId, ((data as any).global_supplements as GlobalSupplement[]) || []);
+                }
               }
               break;
             } else if (i < retries - 1) {
