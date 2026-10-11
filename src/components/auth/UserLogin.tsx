@@ -22,25 +22,35 @@ export function UserLogin() {
     setIsLoading(true);
     setError("");
 
-    const result = await loginUser(username, password);
+    try {
+      const result = await loginUser(username, password);
 
-    if (result.ok) {
-      // Keep spinner alive through navigation — do NOT setIsLoading(false)
-      if (result.isAdmin) {
-        navigate({ to: "/admin" });
-      } else {
-        navigate({ to: "/tables" });
+      if (result.ok) {
+        // Keep spinner alive through navigation — do NOT setIsLoading(false)
+        if (result.isAdmin) {
+          navigate({ to: "/admin" });
+        } else {
+          navigate({ to: "/tables" });
+        }
+        return;
       }
-      return;
-    }
 
-    // Only stop loader on failure
-    setIsLoading(false);
-    setError(result.error ?? "Erreur de connexion.");
-    setIsShaking(true);
-    setPassword("");
-    setTimeout(() => setIsShaking(false), 600);
-    inputRef.current?.focus();
+      // Only stop loader on failure
+      setIsLoading(false);
+      setError(result.error ?? "Erreur de connexion.");
+      setIsShaking(true);
+      setPassword("");
+      setTimeout(() => setIsShaking(false), 600);
+      inputRef.current?.focus();
+    } catch (err) {
+      console.error(err);
+      setIsLoading(false);
+      setError("Erreur inattendue. Veuillez réessayer.");
+      setIsShaking(true);
+      setPassword("");
+      setTimeout(() => setIsShaking(false), 600);
+      inputRef.current?.focus();
+    }
   }
 
   return (

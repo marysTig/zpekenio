@@ -28,43 +28,53 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
     setIsLoading(true);
     setError("");
 
-    // Always verify against Supabase — never against local cache
-    const { data, error: dbError } = await supabase
-      .from("pos_users")
-      .select("username, password")
-      .eq("id", ADMIN_ROW_ID)
-      .maybeSingle();
+    try {
+      // Always verify against Supabase — never against local cache
+      const { data, error: dbError } = await supabase
+        .from("pos_users")
+        .select("username, password")
+        .eq("id", ADMIN_ROW_ID)
+        .maybeSingle();
 
-    if (dbError || !data) {
-      setIsLoading(false);
-      setError("Erreur de connexion au serveur. Réessayez.");
-      setIsShaking(true);
-      setPassword("");
-      setTimeout(() => setIsShaking(false), 600);
-      inputRef.current?.focus();
-      return;
-    }
-
-    const usernameMatch = username.trim().toLowerCase() === data.username.toLowerCase();
-    const passwordMatch = password.trim() === data.password;
-
-    if (usernameMatch && passwordMatch) {
-      // Keep spinner alive — do NOT setIsLoading(false)
-      setAdminAuthenticated(true);
-      onSuccess();
-    } else {
-      // Check if it's a regular employee trying to log in via the admin screen
-      const { useSessionStore } = await import("@/lib/authStore");
-      const employeeResult = await useSessionStore.getState().loginUser(username, password);
-      
-      if (employeeResult.ok && !employeeResult.isAdmin) {
-        // Keep spinner alive through redirect
-        window.location.href = "/tables";
+      if (dbError || !data) {
+        setIsLoading(false);
+        setError("Erreur de connexion au serveur. Réessayez.");
+        setIsShaking(true);
+        setPassword("");
+        setTimeout(() => setIsShaking(false), 600);
+        inputRef.current?.focus();
         return;
       }
-      
+
+      const usernameMatch = username.trim().toLowerCase() === data.username.toLowerCase();
+      const passwordMatch = password.trim() === data.password;
+
+      if (usernameMatch && passwordMatch) {
+        // Keep spinner alive — do NOT setIsLoading(false)
+        setAdminAuthenticated(true);
+        onSuccess();
+      } else {
+        // Check if it's a regular employee trying to log in via the admin screen
+        const { useSessionStore } = await import("@/lib/authStore");
+        const employeeResult = await useSessionStore.getState().loginUser(username, password);
+        
+        if (employeeResult.ok && !employeeResult.isAdmin) {
+          // Keep spinner alive through redirect
+          window.location.href = "/tables";
+          return;
+        }
+        
+        setIsLoading(false);
+        setError("Identifiants incorrects. Veuillez réessayer.");
+        setIsShaking(true);
+        setPassword("");
+        setTimeout(() => setIsShaking(false), 600);
+        inputRef.current?.focus();
+      }
+    } catch (err) {
+      console.error(err);
       setIsLoading(false);
-      setError("Identifiants incorrects. Veuillez réessayer.");
+      setError("Erreur inattendue. Veuillez réessayer.");
       setIsShaking(true);
       setPassword("");
       setTimeout(() => setIsShaking(false), 600);

@@ -336,6 +336,7 @@
   background: oklch(1 0 0 / 11%);
 }
 .admin-login-eye {
+    z-index: 10;
   position: absolute;
   right: 0.75rem;
   top: 50%;
