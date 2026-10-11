@@ -1,10 +1,11 @@
 import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { Armchair, Clock, Ban, Plus } from "lucide-react";
+import { Armchair, Clock, Ban, Plus, Receipt } from "lucide-react";
 import { Sidebar } from "@/components/pos/Sidebar";
 import { MobileBottomNav } from "@/components/pos/MobileBottomNav";
 import { TableOrderSidebar } from "@/components/pos/TableOrderSidebar";
 import { CheckoutReceiptModal } from "@/components/pos/CheckoutReceiptModal";
+import { ExpenseModal } from "@/components/pos/ExpenseModal";
 import { formatElapsed } from "@/data/tables";
 import { formatDA } from "@/data/menu";
 import { useTableStore } from "@/lib/tableStore";
@@ -44,6 +45,7 @@ function SurPlacePage() {
   const [activeTable, setActiveTable] = useState<{ id: string; number: number } | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<{ id: string; number: number } | null>(null);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
 
   // Auto-open sidebar if 'open' search param is present
   useEffect(() => {
@@ -238,6 +240,14 @@ function SurPlacePage() {
               <Plus className="h-4 w-4 hidden sm:block" />
               À Emporter
             </button>
+            <button
+              type="button"
+              onClick={() => setShowExpenseModal(true)}
+              className="flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 active:scale-95 shadow-sm"
+            >
+              <Receipt className="h-4 w-4 hidden sm:block" />
+              Dépense
+            </button>
           </div>
         </header>
 
@@ -325,6 +335,11 @@ function SurPlacePage() {
         globalSupplements={checkoutSupplements}
         onClose={() => setCheckoutTable(null)}
         onConfirm={handleQuickCheckout}
+      />
+
+      <ExpenseModal
+        open={showExpenseModal}
+        onClose={() => setShowExpenseModal(false)}
       />
     </div>
   );
