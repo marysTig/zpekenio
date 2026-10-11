@@ -52,12 +52,40 @@ function NotFoundComponent() {
   );
 }
 
+/** Detect chunk load errors (stale WebView cache after a new deployment). */
+function isChunkLoadError(error: Error): boolean {
+  return (
+    error.message?.includes("Failed to fetch dynamically imported module") ||
+    error.message?.includes("Importing a module script failed") ||
+    error.name === "ChunkLoadError"
+  );
+}
+
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+
   useEffect(() => {
+    // If it's a chunk load error (stale cache after new deployment), reload silently.
+    if (isChunkLoadError(error)) {
+      console.warn("[ChunkLoadError] Stale cache detected — reloading the app.");
+      window.location.reload();
+      return;
+    }
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
+
+  // Show a minimal UI while the reload is in progress.
+  if (isChunkLoadError(error)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Mise à jour détectée, rechargement…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -166,6 +194,27 @@ function RootComponent() {
   useTableSync(isLoggedIn);
   useTableOrdersSync(isLoggedIn);
   useGlobalSupplementsSync(isLoggedIn);
+
+  // ── Global ChunkLoadError handler ───────────────────────────────────────────
+  // When the WebView has stale cache after a new Vercel deployment, dynamic
+  // imports fail. Catch them globally and force a full reload so the user
+  // gets the latest version automatically.
+  useEffect(() => {
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const msg = event.reason?.message ?? "";
+      if (
+        msg.includes("Failed to fetch dynamically imported module") ||
+        msg.includes("Importing a module script failed") ||
+        event.reason?.name === "ChunkLoadError"
+      ) {
+        console.warn("[ChunkLoadError] Stale WebView cache — reloading.");
+        event.preventDefault();
+        window.location.reload();
+      }
+    };
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => window.removeEventListener("unhandledrejection", handleRejection);
+  }, []);
 
   // ── Lifecycle Capacitor Android : retour au foreground ──────────────────────
   // Tables/orders: logged-in only. Print Realtime: primary hub always (session-decoupled).
