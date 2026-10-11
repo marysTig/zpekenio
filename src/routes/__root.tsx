@@ -150,6 +150,8 @@ function RootComponent() {
   
   const routerState = useRouter();
   const isAdminRoute = routerState.state.location.pathname.startsWith("/admin");
+  // Public routes accessible without login
+  const isPublicRoute = routerState.state.location.pathname.startsWith("/menu");
   // Ensures print_settings loads for hub ownership (worker mounts when primary)
   const { isPrimaryHub, loading: printSettingsLoading } = usePrintSettingsStore();
 
@@ -209,7 +211,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {!isLoggedIn && !isAdminRoute ? (
+      {!isLoggedIn && !isAdminRoute && !isPublicRoute ? (
         <UserLogin />
       ) : (
         <Outlet />
