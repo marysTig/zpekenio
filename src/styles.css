@@ -331,7 +331,7 @@
   }
 }
 .menu-pill {
-  flex-none;
+  flex: none;
   white-space: nowrap;
   padding: 0.45rem 1.1rem;
   border-radius: 99px;
