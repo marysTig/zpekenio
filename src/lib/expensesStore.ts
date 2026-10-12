@@ -37,6 +37,7 @@ interface ExpensesState {
   fetchExpenses: () => Promise<void>;
   addExpense: (amount: number, reason: string, customDate?: string, author?: string) => Promise<{ ok: boolean; error?: string }>;
   deleteExpense: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteExpensesBulk: (ids: string[]) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const useExpensesStore = create<ExpensesState>((set, get) => ({
@@ -118,6 +119,20 @@ export const useExpensesStore = create<ExpensesState>((set, get) => ({
 
     try {
       await supabase.from("expenses").delete().eq("id", id);
+      return { ok: true };
+    } catch {
+      return { ok: true };
+    }
+  },
+
+  deleteExpensesBulk: async (ids: string[]) => {
+    if (!ids.length) return { ok: true };
+    const updated = get().expenses.filter((e) => !ids.includes(e.id));
+    set({ expenses: updated });
+    saveLocalExpenses(updated);
+
+    try {
+      await supabase.from("expenses").delete().in("id", ids);
       return { ok: true };
     } catch {
       return { ok: true };

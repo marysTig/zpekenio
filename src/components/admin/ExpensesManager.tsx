@@ -47,12 +47,14 @@ const QUICK_REASONS = [
 const QUICK_AMOUNTS = [100, 200, 500, 1000, 2000, 5000];
 
 export function ExpensesManager() {
-  const { expenses, loading, fetchExpenses, addExpense, deleteExpense } = useExpensesStore();
+  const { expenses, loading, fetchExpenses, addExpense, deleteExpense, deleteExpensesBulk } = useExpensesStore();
 
   const [period, setPeriod] = useState<PeriodFilter>("today");
   const [customDate, setCustomDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   // Add Form state
   const [newAmount, setNewAmount] = useState("");
@@ -199,15 +201,30 @@ export function ExpensesManager() {
     toast.success("Dépense supprimée avec succès");
   };
 
+  const handleDeleteAll = async () => {
+    if (!filteredExpenses.length) return;
+    setDeletingAll(true);
+    try {
+      const ids = filteredExpenses.map((e) => e.id);
+      await deleteExpensesBulk(ids);
+      toast.success(`${ids.length} dépense${ids.length > 1 ? "s" : ""} supprimée${ids.length > 1 ? "s" : ""} avec succès`);
+      setShowDeleteAllModal(false);
+    } catch {
+      toast.error("Erreur lors de la suppression");
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   // Printable Summary
   const handlePrint = () => {
     window.print();
   };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background p-4 md:p-6 font-sans">
+    <div className="flex h-full flex-col overflow-y-auto bg-background p-3 sm:p-4 md:p-6 font-sans">
       {/* ── HEADER ── */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-3 sm:mb-6 flex flex-col gap-2 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
             <Receipt className="h-5 w-5" />
@@ -231,6 +248,18 @@ export function ExpensesManager() {
             <span className="hidden sm:inline">Imprimer</span>
           </button>
 
+          {filteredExpenses.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteAllModal(true)}
+              className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-2 text-xs font-semibold text-destructive transition-all hover:bg-destructive/15 active:scale-95"
+              title="Supprimer toutes les dépenses filtrées"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Supprimer ({filteredExpenses.length})</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -246,9 +275,9 @@ export function ExpensesManager() {
       </div>
 
       {/* ── KPI CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      <div className="grid grid-cols-2 landscape:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4 mb-3 sm:mb-6">
         {/* Card 1: Aujourd'hui */}
-        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-3 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Aujourd'hui</span>
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-rose-500/10 text-rose-600">
@@ -256,7 +285,7 @@ export function ExpensesManager() {
             </div>
           </div>
           <div className="mt-1">
-            <p className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400">
+            <p className="text-lg sm:text-2xl font-black text-rose-600 dark:text-rose-400">
               {todayTotal.toLocaleString("fr-FR")} <span className="text-xs font-bold">DA</span>
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -266,7 +295,7 @@ export function ExpensesManager() {
         </div>
 
         {/* Card 2: Ce mois-ci */}
-        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-3 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Ce mois-ci</span>
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-amber-500/10 text-amber-600">
@@ -274,7 +303,7 @@ export function ExpensesManager() {
             </div>
           </div>
           <div className="mt-1">
-            <p className="text-xl sm:text-2xl font-black text-foreground">
+            <p className="text-lg sm:text-2xl font-black text-foreground">
               {monthTotal.toLocaleString("fr-FR")} <span className="text-xs font-bold">DA</span>
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -284,7 +313,7 @@ export function ExpensesManager() {
         </div>
 
         {/* Card 3: Période sélectionnée */}
-        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-3 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Total Filtre</span>
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -292,7 +321,7 @@ export function ExpensesManager() {
             </div>
           </div>
           <div className="mt-1">
-            <p className="text-xl sm:text-2xl font-black text-foreground">
+            <p className="text-lg sm:text-2xl font-black text-foreground">
               {selectedTotal.toLocaleString("fr-FR")} <span className="text-xs font-bold">DA</span>
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -302,7 +331,7 @@ export function ExpensesManager() {
         </div>
 
         {/* Card 4: Moyenne */}
-        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-1 rounded-2xl border border-border bg-card p-3 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Moyenne / Sortie</span>
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-blue-500/10 text-blue-600">
@@ -310,7 +339,7 @@ export function ExpensesManager() {
             </div>
           </div>
           <div className="mt-1">
-            <p className="text-xl sm:text-2xl font-black text-foreground">
+            <p className="text-lg sm:text-2xl font-black text-foreground">
               {filteredExpenses.length > 0
                 ? Math.round(selectedTotal / filteredExpenses.length).toLocaleString("fr-FR")
                 : 0}{" "}
@@ -324,7 +353,7 @@ export function ExpensesManager() {
       </div>
 
       {/* ── CONTROLS & FILTERS ── */}
-      <div className="mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="mb-3 sm:mb-4 flex flex-col landscape:flex-row md:flex-row gap-2 md:gap-3 items-stretch landscape:items-center md:items-center justify-between rounded-xl border border-border bg-card p-2.5 sm:p-3 shadow-sm">
         {/* Period Pills */}
         <div className="flex flex-wrap items-center gap-1">
           <button
@@ -396,7 +425,7 @@ export function ExpensesManager() {
         </div>
 
         {/* Custom date picker (when custom is selected) + Search input */}
-        <div className="flex flex-col sm:flex-row items-center gap-2">
+        <div className="flex flex-row items-center gap-2 flex-wrap">
           {period === "custom" && (
             <input
               type="date"
@@ -406,7 +435,7 @@ export function ExpensesManager() {
             />
           )}
 
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full sm:w-56 md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               type="text"
@@ -531,13 +560,13 @@ export function ExpensesManager() {
 
       {/* ── ADD EXPENSE MODAL ── */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-150 overflow-y-auto">
           <div
-            className="relative flex flex-col w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-hidden"
+            className="relative flex flex-col w-full max-w-lg my-auto rounded-2xl border border-border bg-card shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-4 bg-muted/30">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-5 sm:py-4 bg-muted/30">
               <div className="flex items-center gap-3">
                 <div className="grid h-9 w-9 place-items-center rounded-xl bg-rose-500/10 text-rose-600">
                   <Receipt className="h-5 w-5" />
@@ -559,7 +588,7 @@ export function ExpensesManager() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleCreateExpense} className="flex flex-col gap-4 p-5">
+            <form onSubmit={handleCreateExpense} className="flex flex-col gap-3 p-4 sm:gap-4 sm:p-5 landscape:grid landscape:grid-cols-2 landscape:gap-x-4">
               {/* Montant */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -670,7 +699,7 @@ export function ExpensesManager() {
               </div>
 
               {/* Submit Buttons */}
-              <div className="mt-2 flex items-center justify-end gap-2 border-t border-border pt-4">
+              <div className="landscape:col-span-2 mt-1 sm:mt-2 flex items-center justify-end gap-2 border-t border-border pt-3 sm:pt-4">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
@@ -695,6 +724,87 @@ export function ExpensesManager() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE ALL CONFIRMATION MODAL ── */}
+      {showDeleteAllModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-150 overflow-y-auto"
+          onClick={() => !deletingAll && setShowDeleteAllModal(false)}
+        >
+          <div
+            className="relative flex flex-col w-full max-w-md my-auto rounded-2xl border border-destructive/30 bg-card shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-border px-5 py-4 bg-destructive/5">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-foreground">Supprimer les dépenses</h3>
+                <p className="text-xs text-muted-foreground">Cette action est irréversible</p>
+              </div>
+              {!deletingAll && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteAllModal(false)}
+                  className="ml-auto grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="flex flex-col gap-4 p-5">
+              <p className="text-sm text-foreground">
+                Vous êtes sur le point de supprimer définitivement :
+              </p>
+              <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nombre</span>
+                  <span className="text-sm font-bold text-foreground">
+                    {filteredExpenses.length} dépense{filteredExpenses.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-t border-border pt-2 mt-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Montant total</span>
+                  <span className="text-base font-black text-destructive">
+                    {selectedTotal.toLocaleString("fr-FR")} DA
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ⚠️ Cette suppression est permanente et ne peut pas être annulée.
+              </p>
+
+              <div className="flex items-center justify-end gap-2 border-t border-border pt-3 mt-1">
+                <button
+                  type="button"
+                  disabled={deletingAll}
+                  onClick={() => setShowDeleteAllModal(false)}
+                  className="rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingAll}
+                  onClick={handleDeleteAll}
+                  className="flex items-center gap-2 rounded-xl bg-destructive px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-destructive/90 active:scale-95 disabled:opacity-50"
+                >
+                  {deletingAll ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Suppression…</>
+                  ) : (
+                    <><Trash2 className="h-4 w-4" /> Confirmer la suppression</>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
