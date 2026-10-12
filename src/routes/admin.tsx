@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { ChefHat, Utensils, Armchair, BarChart3, Menu, X, Users, UserCircle, Printer as PrinterIcon, Plus } from "lucide-react";
+import { ChefHat, Utensils, Armchair, BarChart3, Menu, X, Users, UserCircle, Printer as PrinterIcon, Plus, Receipt } from "lucide-react";
 import { MenuManager } from "@/components/admin/MenuManager";
 import { ZReport } from "@/components/admin/ZReport";
+import { ExpensesManager } from "@/components/admin/ExpensesManager";
 import { AdminLogin } from "@/components/auth/AdminLogin";
 import { useAuthStore } from "@/lib/authStore";
 import { UserManager } from "@/components/admin/UserManager";
@@ -14,11 +15,12 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "menu" | "rapport" | "utilisateurs" | "imprimantes" | "profil" | "supplements";
+type Tab = "menu" | "rapport" | "depenses" | "utilisateurs" | "imprimantes" | "profil" | "supplements";
 
 const navItems = [
   { id: "menu"         as const, icon: Utensils,    label: "Gestion du Menu" },
   { id: "rapport"      as const, icon: BarChart3,   label: "Rapport Z" },
+  { id: "depenses"     as const, icon: Receipt,     label: "Dépenses" },
   { id: "utilisateurs" as const, icon: Users,       label: "Utilisateurs" },
   { id: "imprimantes"  as const, icon: PrinterIcon, label: "Imprimantes" },
   { id: "supplements"  as const, icon: Plus,        label: "Suppléments" },
@@ -106,6 +108,7 @@ function AdminPage() {
           <h1 className="text-lg font-semibold">
             {activeTab === "menu"         && "Gestion du Menu"}
             {activeTab === "rapport"      && "Rapport Z"}
+            {activeTab === "depenses"     && "Gestion des Dépenses"}
             {activeTab === "utilisateurs" && "Gestion des Utilisateurs"}
             {activeTab === "imprimantes"  && "Imprimantes"}
             {activeTab === "supplements"  && "Suppléments de Commande"}
@@ -121,6 +124,7 @@ function AdminPage() {
             </div>
           )}
           {activeTab === "rapport"      && <ZReport />}
+          {activeTab === "depenses"     && <ExpensesManager />}
           {activeTab === "utilisateurs" && <UserManager />}
           {activeTab === "imprimantes"  && <PrinterManager />}
           {activeTab === "supplements"  && <GlobalSupplementsManager />}

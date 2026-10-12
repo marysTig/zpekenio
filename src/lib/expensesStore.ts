@@ -35,7 +35,7 @@ interface ExpensesState {
   expenses: Expense[];
   loading: boolean;
   fetchExpenses: () => Promise<void>;
-  addExpense: (amount: number, reason: string) => Promise<{ ok: boolean; error?: string }>;
+  addExpense: (amount: number, reason: string, customDate?: string, author?: string) => Promise<{ ok: boolean; error?: string }>;
   deleteExpense: (id: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -74,19 +74,21 @@ export const useExpensesStore = create<ExpensesState>((set, get) => ({
     }
   },
 
-  addExpense: async (amount: number, reason: string) => {
-    const username = useSessionStore.getState().currentUser?.username || "Caisse";
+  addExpense: async (amount: number, reason: string, customDate?: string, author?: string) => {
+    const username = author || useSessionStore.getState().currentUser?.username || "Caisse";
     const newExpense: Expense = {
       id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `exp_${Date.now()}`,
       amount,
       reason: reason.trim(),
-      created_at: new Date().toISOString(),
+      created_at: customDate || new Date().toISOString(),
       created_by: username,
     };
 
     // Optimistic local update
     const previous = get().expenses;
-    const updated = [newExpense, ...previous];
+    const updated = [newExpense, ...previous].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
     set({ expenses: updated });
     saveLocalExpenses(updated);
 
@@ -122,3 +124,23 @@ export const useExpensesStore = create<ExpensesState>((set, get) => ({
     }
   },
 }));
+
+/**
+ * Subscribe to realtime changes on the expenses table in Supabase.
+ */
+export function setupExpensesRealtime() {
+  const channel = supabase
+    .channel("expenses-realtime-channel")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "expenses" },
+      () => {
+        useExpensesStore.getState().fetchExpenses();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
