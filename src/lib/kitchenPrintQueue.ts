@@ -109,7 +109,7 @@ export async function enqueueReceipt(
     ...(params.globalSupplements?.length
       ? { globalSupplements: params.globalSupplements }
       : {}),
-    phone: params.phone,
+    ...(params.phone ? { phone: params.phone } : {}),
   });
   const now = new Date().toISOString();
   const payload: PrintJobPayload = {
@@ -197,7 +197,7 @@ export async function enqueueFourTicket(
     orderLabel: params.orderLabel,
     isTable: params.isTable,
     allowedCategoryIds: four.category_ids ?? [],
-    orderNote: params.orderNote,
+    ...(params.orderNote ? { orderNote: params.orderNote } : {}),
   });
 
   if (!escpos) {

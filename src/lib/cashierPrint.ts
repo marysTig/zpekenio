@@ -77,7 +77,7 @@ export async function runCashierReceiptPrint(params: {
     items,
     total,
     printers: params.printers,
-    phone,
+    ...(phone ? { phone } : {}),
     ...(globalSupplements?.length ? { globalSupplements } : {}),
   });
 
