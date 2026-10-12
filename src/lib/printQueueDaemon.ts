@@ -265,7 +265,8 @@ export function startPrintQueueDaemon(): () => void {
             /* ignore */
           }
           if (isNativePrintWorkerActive()) continue;
-          await cancelLegacyKitchenJobs();
+          // NOTE: on ne cancel plus les jobs kitchen au boot —
+          // ils appartiennent maintenant au four (imprimante cuisine).
           await reclaimPrintingJobsForThisDevice(getLocalPrintDeviceId());
         }
         if (isNativePrintWorkerActive()) continue;

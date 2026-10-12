@@ -249,7 +249,10 @@ export async function enqueueFourTicket(
   return { status: "enqueued", jobId: (data?.id as string) ?? "" };
 }
 
-/** Cancel leftover kitchen jobs so they never reach the Bluetooth drain. */
+/**
+ * Cancel leftover ORPHAN kitchen jobs (no printer_id = truly legacy).
+ * Jobs with a printer_id belong to the four printer and must NOT be cancelled.
+ */
 export async function cancelLegacyKitchenJobs(): Promise<number> {
   const now = new Date().toISOString();
   const { data, error } = await supabase
@@ -261,6 +264,7 @@ export async function cancelLegacyKitchenJobs(): Promise<number> {
       updated_at: now,
     })
     .eq("job_type", "kitchen")
+    .is("printer_id", null)          // ← seuls les jobs sans imprimante (orphelins)
     .in("status", ["pending", "printing", "needs_manual"])
     .select("id");
   if (error) {
@@ -268,7 +272,7 @@ export async function cancelLegacyKitchenJobs(): Promise<number> {
     return 0;
   }
   const n = data?.length ?? 0;
-  if (n > 0) console.log(`[print_jobs] cancelled ${n} legacy kitchen job(s)`);
+  if (n > 0) console.log(`[print_jobs] cancelled ${n} orphan kitchen job(s)`);
   return n;
 }
 
@@ -337,6 +341,7 @@ export async function hasActivePrintJobs(): Promise<boolean> {
 
 /**
  * Immediately reclaim all `printing` jobs claimed by this device (daemon restart).
+ * Covers both receipt and kitchen (four) jobs.
  */
 export async function reclaimPrintingJobsForThisDevice(
   deviceId: string = getLocalPrintDeviceId(),
@@ -346,7 +351,7 @@ export async function reclaimPrintingJobsForThisDevice(
     .select("*")
     .eq("status", "printing")
     .eq("claimed_by_device_id", deviceId)
-    .eq("job_type", "receipt");
+    .in("job_type", ["receipt", "kitchen"]);
 
   if (error || !rows?.length) return [];
   const claimed: PrintJob[] = [];
@@ -384,7 +389,7 @@ export async function reclaimStalePrintingJobs(
     .from("print_jobs")
     .select("*")
     .eq("status", "printing")
-    .eq("job_type", "receipt")
+    .in("job_type", ["receipt", "kitchen"])
     .lt("updated_at", cutoff);
 
   if (error) return [];
