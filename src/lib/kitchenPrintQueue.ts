@@ -275,7 +275,8 @@ export async function cancelLegacyKitchenJobs(): Promise<number> {
 export async function claimNextPrintJob(
   deviceId: string = getLocalPrintDeviceId(),
 ): Promise<PrintJob | null> {
-  await cancelLegacyKitchenJobs();
+  // NOTE: we no longer cancel all 'kitchen' jobs here —
+  // kitchen jobs are now used for the 'four' printer.
 
   const nowIso = new Date().toISOString();
 
@@ -283,7 +284,7 @@ export async function claimNextPrintJob(
     .from("print_jobs")
     .select("*")
     .eq("status", "pending")
-    .eq("job_type", "receipt")
+    .in("job_type", ["receipt", "kitchen"])
     .lte("next_attempt_at", nowIso)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })

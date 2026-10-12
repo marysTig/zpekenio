@@ -22,6 +22,8 @@ import { recordZReport } from "@/lib/zReport";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useGlobalSupplementsStore, reloadGlobalSupplements, type GlobalSupplement } from "@/lib/globalSupplementsStore";
 import { playAddSound, playCashSound } from "@/lib/posSounds";
+import { enqueueFourTicket } from "@/lib/kitchenPrintQueue";
+import { getPrintersFromStore } from "@/lib/printerStore";
 
 type TableOrderSidebarProps = {
   tableId: string;
@@ -681,7 +683,24 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       }
     }
 
-    // Imprimer le ticket de cuisine immédiatement
+    // ── Ticket Four (cuisine) ─────────────────────────────────────
+    // Envoi non-bloquant : si pas de four configuré → noop silencieux
+    void enqueueFourTicket({
+      tableId,
+      orderLabel: tableNumber,
+      items,
+      isTable: !isEmporter,
+      ...(orderPhone ? { orderNote: orderPhone } : {}),
+      printers: getPrintersFromStore(),
+    }).then((result) => {
+      if (result.status === "enqueued") {
+        console.log("[FOUR] Ticket four enfilé :", result.jobId);
+      } else if (result.status === "noop" && result.reason !== "no_printer") {
+        console.log("[FOUR] Noop four :", result.reason);
+      }
+    });
+
+    // ── Ticket Caisse (reçu de commande) ─────────────────────────
     const orderLabel = isEmporter
       ? `À EMPORTER — Commande #${tableNumber}`
       : `SUR PLACE — Ticket #${tableNumber}`;

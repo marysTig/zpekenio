@@ -1,4 +1,4 @@
-﻿/**
+/**
  * PrintQueueDaemon — single-flight Bluetooth drain for Caisse receipts.
  * Single-printer profile; MAC cooldown via bluetoothCoordinator; watchdog self-heal.
  */
@@ -118,7 +118,10 @@ async function sendJobBytesWithWatchdog(
 }
 
 async function processJob(job: PrintJob): Promise<void> {
-  if (job.job_type !== "receipt") {
+  // kitchen = four printer ticket ; receipt = caisse ticket
+  // Both use the same ESC/POS Bluetooth path.
+  if (job.job_type !== "receipt" && job.job_type !== "kitchen") {
+    // Unknown job type — cancel to avoid infinite loop
     await cancelLegacyKitchenJobs();
     return;
   }
@@ -130,16 +133,17 @@ async function processJob(job: PrintJob): Promise<void> {
   }
 
   const data = base64ToUint8(b64);
+  const isFour = job.job_type === "kitchen";
   const activityId = logPrintActivity({
-    kind: "caisse",
+    kind: isFour ? "four" : "caisse",
     printerName: job.printer_name ?? "?",
     mac: job.mac_address,
     status: "started",
-    detail: `receipt · ${job.payload.orderLabel}`,
+    detail: `${isFour ? "four" : "receipt"} · ${job.payload.orderLabel}`,
   });
 
   console.log(
-    `[PRINT DAEMON] receipt → ${job.printer_name} (attempt ${job.attempt_count + 1})`,
+    `[PRINT DAEMON] ${isFour ? "four/kitchen" : "receipt"} → ${job.printer_name} (attempt ${job.attempt_count + 1})`,
   );
   console.log(`[PRINT START] ${job.printer_name}`);
 
