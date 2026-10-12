@@ -100,7 +100,7 @@ export function buildReceiptEscPos(params: {
       }
       ticket += DOUBLE_HEIGHT_WIDTH;
     }
-    
+
     if (item.note) {
       ticket += NORMAL_SIZE;
       ticket += `   Note: ${item.note}\n`;
@@ -114,6 +114,101 @@ export function buildReceiptEscPos(params: {
     for (const supp of globalSupplements) {
       ticket += `+ ${supp.label}\n`;
     }
+  }
+
+  ticket += NORMAL_SIZE + SEP;
+  ticket += justify("TOTAL", `${formatNumber(total)} DA`) + "\n";
+  ticket += "\n\n\n\n";
+  ticket += CUT_PAPER;
+  return encodeEscPosText(ticket);
+}
+
+/**
+ * Build a kitchen (four) ESC/POS ticket.
+ *
+ * Header is LARGE + BOLD:
+ *   "A TABLE  #3"    — for dine-in orders
+ *   "A EMPORTER  #7" — for takeaway orders
+ *
+ * Only items whose product.category_id is in allowedCategoryIds are printed
+ * (if allowedCategoryIds is empty / undefined → all items are printed).
+ *
+ * Returns null when no items remain after filtering (nothing to print).
+ */
+export function buildFourTicket(params: {
+  items: CartItem[];
+  orderLabel: string | number;
+  /** true = dine-in table, false = takeaway */
+  isTable: boolean;
+  /** Category IDs allowed for this four printer. Empty = print everything. */
+  allowedCategoryIds?: string[];
+  orderNote?: string;
+}): Uint8Array | null {
+  const { items, orderLabel, isTable, allowedCategoryIds, orderNote } = params;
+
+  // Filter items by allowed categories
+  const filteredItems =
+    allowedCategoryIds && allowedCategoryIds.length > 0
+      ? items.filter(
+          (item) =>
+            item.product.categoryId &&
+            allowedCategoryIds.includes(item.product.categoryId),
+        )
+      : items;
+
+  // Nothing to print for this printer
+  if (filteredItems.length === 0) return null;
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const LINE_WIDTH = 32;
+  const SEP = "=".repeat(LINE_WIDTH) + "\n";
+
+  // Large bold header indicating table or takeaway + order number
+  const headerLine = isTable
+    ? `A TABLE  #${orderLabel}`
+    : `A EMPORTER  #${orderLabel}`;
+
+  let ticket = INIT;
+
+  // ── Entête gras + grand ────────────────────────────────────────
+  ticket += ALIGN_CENTER + DOUBLE_HEIGHT_WIDTH + BOLD_ON;
+  ticket += headerLine + "\n";
+  ticket += NORMAL_SIZE + BOLD_OFF;
+  ticket += `Heure : ${timeStr}\n`;
+  ticket += SEP;
+
+  // ── Articles ──────────────────────────────────────────────────
+  ticket += ALIGN_LEFT + DOUBLE_HEIGHT_WIDTH + BOLD_ON;
+
+  for (const item of filteredItems) {
+    let name = item.product.name;
+    if (item.selectedOption) name = `${name} (${item.selectedOption.label})`;
+    ticket += `${item.quantity}x ${name}\n`;
+
+    if (item.supplements.length > 0) {
+      ticket += NORMAL_SIZE;
+      for (const sup of item.supplements) {
+        ticket += `   + ${sup.label}\n`;
+      }
+      ticket += DOUBLE_HEIGHT_WIDTH;
+    }
+
+    if (item.note) {
+      ticket += NORMAL_SIZE;
+      ticket += `   ! ${item.note}\n`;
+      ticket += DOUBLE_HEIGHT_WIDTH;
+    }
+    ticket += "\n";
+  }
+
+  // ── Note de commande ──────────────────────────────────────────
+  if (orderNote) {
+    ticket += NORMAL_SIZE + BOLD_ON + `NOTE: ${orderNote}\n` + BOLD_OFF;
   }
 
   ticket += NORMAL_SIZE + SEP;

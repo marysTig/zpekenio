@@ -2,10 +2,11 @@ import { useEffect, useCallback } from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
 
-/** Single-printer POS — Caisse only. */
-export type PrinterType = "caisse";
+/** Two-printer POS — Caisse (receipts) + Four (kitchen). */
+export type PrinterType = "caisse" | "four";
 
-export function normalizePrinterType(_raw: unknown): PrinterType {
+export function normalizePrinterType(raw: unknown): PrinterType {
+  if (raw === "four") return "four";
   return "caisse";
 }
 
@@ -15,8 +16,9 @@ export type Printer = {
   type: PrinterType;
   mac_address: string | null;
   enabled: boolean;
-  /** Kept for DB compatibility — always empty in single-printer mode. */
+  /** Category names for display (four only). */
   categories: string[];
+  /** Category IDs to filter which items print on the four. */
   category_ids: string[];
 };
 
@@ -47,15 +49,15 @@ async function fetchPrintersFromDB(): Promise<Printer[]> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? [])
-    .filter((row: any) => row["type"] === "caisse")
+    .filter((row: any) => row["type"] === "caisse" || row["type"] === "four")
     .map((row: any) => ({
       id: row["id"] as string,
       name: row["name"] as string,
-      type: "caisse" as const,
+      type: normalizePrinterType(row["type"]),
       mac_address: (row["mac_address"] as string | null) ?? null,
       enabled: (row["enabled"] as boolean) ?? true,
-      categories: [] as string[],
-      category_ids: [] as string[],
+      categories: (row["categories"] as string[]) ?? [],
+      category_ids: (row["category_ids"] as string[]) ?? [],
     }));
 }
 
@@ -102,33 +104,38 @@ export function usePrinterStore() {
 
   const addPrinter = async (printer: Omit<Printer, "id">) => {
     const existing = usePrinterGlobalState.getState().printers;
-    if (existing.length > 0) {
+    const sameType = existing.filter((p) => p.type === printer.type);
+    if (sameType.length > 0) {
       throw new Error(
-        "Une seule imprimante caisse est autorisée. Modifiez ou supprimez l'existante.",
+        printer.type === "caisse"
+          ? "Une seule imprimante caisse est autorisée."
+          : "Une seule imprimante four est autorisée.",
       );
     }
     const { error } = await supabase.from("printers").insert({
       name: printer.name,
-      type: "caisse",
+      type: printer.type,
       mac_address: printer.mac_address || null,
       enabled: printer.enabled,
-      categories: [],
-      category_ids: [],
+      categories: printer.categories ?? [],
+      category_ids: printer.category_ids ?? [],
     });
     if (error) throw new Error(error.message);
     await reload();
   };
 
   const updatePrinter = async (id: string, printer: Partial<Printer>) => {
+    const existing = usePrinterGlobalState.getState().printers.find((p) => p.id === id);
+    const resolvedType = printer.type ?? existing?.type ?? "caisse";
     const { error } = await supabase
       .from("printers")
       .update({
         ...(printer.name !== undefined && { name: printer.name }),
-        type: "caisse",
+        type: resolvedType,
         ...(printer.mac_address !== undefined && { mac_address: printer.mac_address }),
         ...(printer.enabled !== undefined && { enabled: printer.enabled }),
-        categories: [],
-        category_ids: [],
+        categories: printer.categories ?? existing?.categories ?? [],
+        category_ids: printer.category_ids ?? existing?.category_ids ?? [],
       })
       .eq("id", id);
     if (error) throw new Error(error.message);

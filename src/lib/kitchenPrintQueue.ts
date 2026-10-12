@@ -1,5 +1,5 @@
 /**
- * Durable print queue — Caisse receipt only.
+ * Durable print queue — Caisse receipt + Four (kitchen) tickets.
  * UI enqueues; PrintQueueDaemon / native hub owns Bluetooth.
  */
 
@@ -8,9 +8,10 @@ import type { CartItem } from "@/lib/cart";
 import type { GlobalSupplement } from "@/lib/globalSupplementsStore";
 import { getPrintersFromStore, type Printer } from "@/lib/printerStore";
 import { getLocalPrintDeviceId } from "@/lib/printDevice";
-import { buildReceiptEscPos, uint8ToBase64 } from "@/lib/escposTickets";
+import { buildReceiptEscPos, buildFourTicket, uint8ToBase64 } from "@/lib/escposTickets";
 
 export const PRIORITY_RECEIPT = 100;
+export const PRIORITY_FOUR = 90;
 export const MAX_PRINT_ATTEMPTS = 3;
 /** Single-printer profile — keep in sync with EscPosBluetoothPrinter / PrintJobRepository. */
 export const RETRY_BACKOFF_MS = 2500;
@@ -148,6 +149,103 @@ export async function enqueueReceipt(
     return { status: "error", message: error.message };
   }
   console.log("[print_jobs] receipt enqueued", data?.id);
+  return { status: "enqueued", jobId: (data?.id as string) ?? "" };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Four (kitchen printer) ticket
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type EnqueueFourResult =
+  | { status: "enqueued"; jobId: string }
+  | { status: "noop"; reason: "no_printer" | "no_items" | "duplicate" }
+  | { status: "error"; message: string };
+
+export type EnqueueFourParams = {
+  tableId: string;
+  orderLabel: string | number;
+  items: CartItem[];
+  /** true = commande en salle, false = à emporter */
+  isTable: boolean;
+  orderNote?: string;
+  checkoutTs?: number;
+  printers?: Printer[];
+};
+
+/**
+ * Enqueue a kitchen (four) ticket.
+ * - Looks for an enabled four printer with a valid MAC address.
+ * - Filters items by the printer's category_ids (empty = all items).
+ * - Builds the ESC/POS payload with "A TABLE #X" or "A EMPORTER #X" header.
+ * - Returns noop("no_items") if nothing matches the category filter.
+ */
+export async function enqueueFourTicket(
+  params: EnqueueFourParams,
+): Promise<EnqueueFourResult> {
+  const printers = params.printers ?? getPrintersFromStore();
+  const four = printers.find(
+    (p) => p.enabled && p.type === "four" && (p.mac_address || "").trim() !== "",
+  );
+  if (!four) {
+    return { status: "noop", reason: "no_printer" };
+  }
+
+  const mac = four.mac_address!.trim();
+
+  const escpos = buildFourTicket({
+    items: params.items,
+    orderLabel: params.orderLabel,
+    isTable: params.isTable,
+    allowedCategoryIds: four.category_ids ?? [],
+    orderNote: params.orderNote,
+  });
+
+  if (!escpos) {
+    // No items match the category filter
+    return { status: "noop", reason: "no_items" };
+  }
+
+  const uuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const tableIdForDb =
+    params.tableId && uuidRe.test(params.tableId) ? params.tableId : null;
+  const checkoutTs = params.checkoutTs ?? Date.now();
+  const idempotencyKey = `four:${params.tableId || params.orderLabel}:${checkoutTs}`;
+
+  const now = new Date().toISOString();
+  const payload: PrintJobPayload = {
+    escposBase64: uint8ToBase64(escpos),
+    tableId: tableIdForDb ?? String(params.orderLabel),
+    orderLabel: params.orderLabel,
+  };
+
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .insert({
+      table_id: tableIdForDb,
+      job_type: "kitchen",
+      priority: PRIORITY_FOUR,
+      printer_id: four.id,
+      printer_name: four.name,
+      mac_address: mac,
+      idempotency_key: idempotencyKey,
+      status: "pending",
+      attempt_count: 0,
+      next_attempt_at: now,
+      payload,
+      updated_at: now,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "23505") {
+      return { status: "noop", reason: "duplicate" };
+    }
+    console.error("[print_jobs] four enqueue error:", error.message);
+    return { status: "error", message: error.message };
+  }
+  console.log("[print_jobs] four ticket enqueued", data?.id);
   return { status: "enqueued", jobId: (data?.id as string) ?? "" };
 }
 
