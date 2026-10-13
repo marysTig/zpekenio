@@ -246,6 +246,12 @@ export async function enqueueFourTicket(
     return { status: "error", message: error.message };
   }
   console.log("[print_jobs] four ticket enqueued", data?.id);
+
+  // Wake the JS daemon so the kitchen job is drained immediately
+  // (the native Android worker only handles receipt jobs)
+  const { wakePrintQueueDaemon } = await import("@/lib/printQueueDaemon");
+  wakePrintQueueDaemon();
+
   return { status: "enqueued", jobId: (data?.id as string) ?? "" };
 }
 
@@ -296,6 +302,50 @@ export async function claimNextPrintJob(
 
   if (error) {
     console.error("[print_jobs] claim fetch error:", error.message);
+    return null;
+  }
+  if (!candidates?.length) return null;
+
+  for (const row of candidates) {
+    const { data, error: updErr } = await supabase
+      .from("print_jobs")
+      .update({
+        status: "printing",
+        claimed_by_device_id: deviceId,
+        updated_at: new Date().toISOString(),
+        error: null,
+      })
+      .eq("id", (row as { id: string }).id)
+      .eq("status", "pending")
+      .select("*")
+      .maybeSingle();
+    if (!updErr && data) return mapJobRow(data);
+  }
+  return null;
+}
+
+/**
+ * Claim the next KITCHEN-only job (four printer).
+ * Called by the JS daemon's dedicated kitchen drain — independent of the
+ * native Android worker which only handles receipt jobs.
+ */
+export async function claimNextKitchenJob(
+  deviceId: string = getLocalPrintDeviceId(),
+): Promise<PrintJob | null> {
+  const nowIso = new Date().toISOString();
+
+  const { data: candidates, error } = await supabase
+    .from("print_jobs")
+    .select("*")
+    .eq("status", "pending")
+    .eq("job_type", "kitchen")
+    .lte("next_attempt_at", nowIso)
+    .order("priority", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(3);
+
+  if (error) {
+    console.error("[print_jobs] claimNextKitchenJob fetch error:", error.message);
     return null;
   }
   if (!candidates?.length) return null;

@@ -146,18 +146,24 @@ export function buildFourTicket(params: {
 }): Uint8Array | null {
   const { items, orderLabel, isTable, allowedCategoryIds, orderNote } = params;
 
-  // Filter items by allowed categories
+  // Filter items by allowed categories.
+  // Items without a categoryId (e.g. locally-added without DB round-trip) are
+  // always included so the four printer never silently skips them.
   const filteredItems =
     allowedCategoryIds && allowedCategoryIds.length > 0
       ? items.filter(
           (item) =>
-            item.product.categoryId &&
+            !item.product.categoryId ||                        // pas de catégorie → inclure
             allowedCategoryIds.includes(item.product.categoryId),
         )
       : items;
 
-  // Nothing to print for this printer
-  if (filteredItems.length === 0) return null;
+  // If the filter excluded everything, fall back to all items so the ticket
+  // is never silently lost (misconfigured categories).
+  const printItems = filteredItems.length > 0 ? filteredItems : items;
+
+  // Nothing to print at all
+  if (printItems.length === 0) return null;
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString("fr-FR", {
@@ -185,7 +191,7 @@ export function buildFourTicket(params: {
   // ── Articles ──────────────────────────────────────────────────
   ticket += ALIGN_LEFT + DOUBLE_HEIGHT_WIDTH + BOLD_ON;
 
-  for (const item of filteredItems) {
+  for (const item of printItems) {
     let name = item.product.name;
     if (item.selectedOption) name = `${name} (${item.selectedOption.label})`;
     ticket += `${item.quantity}x ${name}\n`;

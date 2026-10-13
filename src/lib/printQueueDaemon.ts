@@ -18,6 +18,7 @@ import { base64ToUint8 } from "@/lib/escposTickets";
 import {
   cancelLegacyKitchenJobs,
   claimNextPrintJob,
+  claimNextKitchenJob,
   markPrintJobDone,
   reclaimPrintingJobsForThisDevice,
   reclaimStalePrintingJobs,
@@ -47,13 +48,14 @@ function notifyDrain() {
   wakeDrain?.();
 }
 
-/** Called when a new pending job arrives (realtime). */
+/** Called when a new pending job arrives (realtime or after enqueue). */
 export function wakePrintQueueDaemon() {
+  // Always wake the JS drain loop (handles kitchen/four jobs on ALL platforms)
+  notifyDrain();
+  // Also wake the native worker if it's active (handles receipt/caisse jobs on Android)
   if (isNativePrintWorkerActive()) {
     void wakeNativePrintWorker();
-    return;
   }
-  notifyDrain();
 }
 
 async function sendJobBytes(job: PrintJob, data: Uint8Array): Promise<"ok"> {
@@ -240,10 +242,6 @@ export function startPrintQueueDaemon(): () => void {
         await waitForWake(200);
         continue;
       }
-      if (isNativePrintWorkerActive()) {
-        await waitForWake(2000);
-        continue;
-      }
       if (typeof window === "undefined" || !window.bluetoothSerial) {
         await waitForWake(5000);
         continue;
@@ -256,7 +254,11 @@ export function startPrintQueueDaemon(): () => void {
 
       draining = true;
       try {
-        if (!radioBootstrapped) {
+        // ── Bootstrap radio JS (seulement si le worker natif est INACTIF) ──
+        // Quand le natif est actif, il possède le radio BT pour la caisse.
+        // hardSettleRadio() appellerait bluetoothSerial.disconnect() et
+        // couperait la connexion caisse en cours → NE PAS l'appeler.
+        if (!radioBootstrapped && !isNativePrintWorkerActive()) {
           radioBootstrapped = true;
           markRadioNeedsSettle("daemon-start");
           try {
@@ -264,26 +266,43 @@ export function startPrintQueueDaemon(): () => void {
           } catch {
             /* ignore */
           }
-          if (isNativePrintWorkerActive()) continue;
-          // NOTE: on ne cancel plus les jobs kitchen au boot —
-          // ils appartiennent maintenant au four (imprimante cuisine).
+          await reclaimPrintingJobsForThisDevice(getLocalPrintDeviceId());
+        } else if (!radioBootstrapped && isNativePrintWorkerActive()) {
+          // Natif actif : bootstrap minimal sans toucher le radio BT
+          radioBootstrapped = true;
           await reclaimPrintingJobsForThisDevice(getLocalPrintDeviceId());
         }
-        if (isNativePrintWorkerActive()) continue;
         await reclaimStalePrintingJobs(getLocalPrintDeviceId());
 
-        while (
-          !stopped &&
-          isLocalDevicePrimaryHub() &&
-          !isNativePrintWorkerActive()
-        ) {
-          const job = await claimNextPrintJob();
-          if (!job) break;
-          if (isNativePrintWorkerActive()) {
-            await requeueInterruptedJob(job.id);
-            break;
+        // ── Drain kitchen/four jobs (toujours, même si le worker natif est actif) ──
+        // Le worker natif Android gère la caisse (receipt).
+        // Le daemon JS gère le four (kitchen) sur tous les appareils.
+        while (!stopped && isLocalDevicePrimaryHub()) {
+          const kitchenJob = await claimNextKitchenJob();
+          if (!kitchenJob) break;
+          await processJob(kitchenJob);
+        }
+
+        // ── Drain receipt jobs (seulement si le worker natif est inactif) ──
+        if (!isNativePrintWorkerActive()) {
+          while (
+            !stopped &&
+            isLocalDevicePrimaryHub() &&
+            !isNativePrintWorkerActive()
+          ) {
+            const job = await claimNextPrintJob();
+            if (!job) break;
+            if (isNativePrintWorkerActive()) {
+              await requeueInterruptedJob(job.id);
+              break;
+            }
+            // Skip kitchen jobs here — already drained above
+            if (job.job_type === "kitchen") {
+              await requeueInterruptedJob(job.id);
+              continue;
+            }
+            await processJob(job);
           }
-          await processJob(job);
         }
       } catch (e) {
         console.error("[PRINT DAEMON] drain error", e);
