@@ -111,7 +111,8 @@ class PrintJobRepository(
       .put("error", "Worker restarted")
     try {
       patch(
-        "/print_jobs?status=eq.printing&job_type=eq.receipt&claimed_by_device_id=eq.$deviceId",
+        // Both receipt and kitchen jobs claimed by this device
+        "/print_jobs?status=eq.printing&job_type=in.(receipt,kitchen)&claimed_by_device_id=eq.$deviceId",
         patchBody,
       )
       Log.i(TAG, "reclaimed printing jobs for $deviceId")
@@ -131,7 +132,8 @@ class PrintJobRepository(
       .put("error", "Stale printing reclaim")
     try {
       val result = patch(
-        "/print_jobs?status=eq.printing&job_type=eq.receipt&updated_at=lt.$cutoff",
+        // Both receipt and kitchen — avoid stuck four-printer jobs
+        "/print_jobs?status=eq.printing&job_type=in.(receipt,kitchen)&updated_at=lt.$cutoff",
         patchBody,
       )
       val n = try {
@@ -148,9 +150,11 @@ class PrintJobRepository(
   fun claimNext(): NativePrintJob? {
     // OkHttp HttpUrl encodes query values — pass raw ISO, do not pre-encode.
     val now = nowIso()
+    // Only cancel truly orphan kitchen jobs (no printer_id = legacy/stray)
     cancelLegacyKitchenJobs()
     val path =
-      "/print_jobs?select=*&status=eq.pending&job_type=eq.receipt" +
+      // Claim both receipt (caisse) AND kitchen (four) jobs, highest priority first
+      "/print_jobs?select=*&status=eq.pending&job_type=in.(receipt,kitchen)" +
         "&next_attempt_at=lte.$now&order=priority.desc,created_at.asc&limit=5"
     val candidates = JSONArray(get(path))
     if (candidates.length() == 0) return null
@@ -179,11 +183,14 @@ class PrintJobRepository(
     return null
   }
 
-  /** Cancel leftover kitchen jobs so they never touch Bluetooth. */
+  /**
+   * Cancel ORPHAN kitchen jobs only (printer_id IS NULL = truly legacy).
+   * Four printer jobs have printer_id set and must NOT be cancelled.
+   */
   fun cancelLegacyKitchenJobs() {
     try {
       val result = patch(
-        "/print_jobs?job_type=eq.kitchen&status=in.(pending,printing,needs_manual)",
+        "/print_jobs?job_type=eq.kitchen&printer_id=is.null&status=in.(pending,printing,needs_manual)",
         JSONObject()
           .put("status", "cancelled")
           .put("error", "Cuisine désactivée — ticket ignoré")
@@ -195,7 +202,7 @@ class PrintJobRepository(
       } catch (_: Exception) {
         0
       }
-      if (n > 0) Log.i(TAG, "cancelled $n legacy kitchen job(s)")
+      if (n > 0) Log.i(TAG, "cancelled $n orphan kitchen job(s)")
     } catch (e: Exception) {
       Log.w(TAG, "cancel kitchen failed", e)
     }
@@ -275,7 +282,8 @@ class PrintJobRepository(
   fun retryAllNeedsManual(): Int {
     val now = nowIso()
     val result = patch(
-      "/print_jobs?status=eq.needs_manual&job_type=eq.receipt",
+      // Retry both receipt and kitchen (four) jobs
+      "/print_jobs?status=eq.needs_manual&job_type=in.(receipt,kitchen)",
       JSONObject()
         .put("status", "pending")
         .put("attempt_count", 0)

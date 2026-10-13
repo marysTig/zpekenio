@@ -255,9 +255,7 @@ export function startPrintQueueDaemon(): () => void {
       draining = true;
       try {
         // ── Bootstrap radio JS (seulement si le worker natif est INACTIF) ──
-        // Quand le natif est actif, il possède le radio BT pour la caisse.
-        // hardSettleRadio() appellerait bluetoothSerial.disconnect() et
-        // couperait la connexion caisse en cours → NE PAS l'appeler.
+        // Quand le natif est actif, il possède le radio BT pour les deux imprimantes.
         if (!radioBootstrapped && !isNativePrintWorkerActive()) {
           radioBootstrapped = true;
           markRadioNeedsSettle("daemon-start");
@@ -272,34 +270,19 @@ export function startPrintQueueDaemon(): () => void {
           radioBootstrapped = true;
           await reclaimPrintingJobsForThisDevice(getLocalPrintDeviceId());
         }
-        await reclaimStalePrintingJobs(getLocalPrintDeviceId());
 
-        // ── Drain kitchen/four jobs (toujours, même si le worker natif est actif) ──
-        // Le worker natif Android gère la caisse (receipt).
-        // Le daemon JS gère le four (kitchen) sur tous les appareils.
-        while (!stopped && isLocalDevicePrimaryHub()) {
-          const kitchenJob = await claimNextKitchenJob();
-          if (!kitchenJob) break;
-          await processJob(kitchenJob);
-        }
-
-        // ── Drain receipt jobs (seulement si le worker natif est inactif) ──
+        // ── Drain uniquement si le worker natif est inactif ──
+        // Sur Android, le service natif (PrintWorkerLoop) gère TOUS les jobs
+        // (receipt ET kitchen). Le daemon JS ne draine qu'en fallback (web/dev).
         if (!isNativePrintWorkerActive()) {
-          while (
-            !stopped &&
-            isLocalDevicePrimaryHub() &&
-            !isNativePrintWorkerActive()
-          ) {
+          await reclaimStalePrintingJobs(getLocalPrintDeviceId());
+
+          while (!stopped && isLocalDevicePrimaryHub() && !isNativePrintWorkerActive()) {
             const job = await claimNextPrintJob();
             if (!job) break;
             if (isNativePrintWorkerActive()) {
               await requeueInterruptedJob(job.id);
               break;
-            }
-            // Skip kitchen jobs here — already drained above
-            if (job.job_type === "kitchen") {
-              await requeueInterruptedJob(job.id);
-              continue;
             }
             await processJob(job);
           }

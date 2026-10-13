@@ -187,30 +187,29 @@ class PrintWorkerLoop(
     val name = job.printerName ?: "imprimante"
     val mac = job.macAddress
     val b64 = job.escposBase64
+    val isReceipt = job.jobType == "receipt"
     Log.i(TAG, "PRINT START · ${job.jobType} → $name")
 
-    // Receipts-only: cancel leftover kitchen jobs without Bluetooth I/O
-    if (job.jobType != "receipt") {
-      Log.i(TAG, "cancel legacy kitchen job ${job.id}")
-      repo.cancelJob(job.id, "Cuisine désactivée — ticket ignoré")
-      return
-    }
-
     if (mac.isNullOrBlank() || b64.isNullOrBlank()) {
-      repo.scheduleRetry(job.id, 99, "Payload ou MAC manquant", 0)
+      // Orphan job (no MAC or no payload) — cancel immediately
+      Log.w(TAG, "cancel orphan job ${job.id} — missing mac or payload")
+      repo.cancelJob(job.id, "Payload ou MAC manquant")
       lastError.set("Payload ou MAC manquant")
       return
     }
 
     try {
       repo.heartbeat(job.id)
-      printer.sendEscPos(name, mac, b64, isReceipt = true)
+      // isReceipt flag controls MAC cooldown timing and post-write drain:
+      //   receipt=true  → RECEIPT_MAC_COOLDOWN_MS, no drain delay
+      //   receipt=false → INTER_PRINTER_GAP_MS, PRE_DISCONNECT_DRAIN_MS delay
+      printer.sendEscPos(name, mac, b64, isReceipt = isReceipt)
       repo.markDone(job.id)
       lastError.set(null)
-      Log.i(TAG, "PRINT END OK · $name")
+      Log.i(TAG, "PRINT END OK · ${job.jobType} · $name")
     } catch (e: Exception) {
       val msg = e.message ?: "Erreur impression"
-      Log.e(TAG, "PRINT FAIL · $name · $msg", e)
+      Log.e(TAG, "PRINT FAIL · ${job.jobType} · $name · $msg", e)
       lastError.set(msg)
       try {
         printer.hardSettle("job-fail:$name")
@@ -218,12 +217,9 @@ class PrintWorkerLoop(
         /* ignore */
       }
       val nextAttempt = job.attemptCount + 1
-      repo.scheduleRetry(
-        job.id,
-        nextAttempt,
-        msg,
-        PrintJobRepository.RECEIPT_RETRY_BACKOFF_MS,
-      )
+      val backoff = if (isReceipt) PrintJobRepository.RECEIPT_RETRY_BACKOFF_MS
+                    else PrintJobRepository.RETRY_BACKOFF_MS
+      repo.scheduleRetry(job.id, nextAttempt, msg, backoff)
     }
   }
 
