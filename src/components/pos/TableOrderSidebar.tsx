@@ -664,23 +664,37 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   };
 
   const handleValidateOrder = async () => {
-    // ── Ticket Four (cuisine) — lancé en premier, sans attendre les écritures ──
-    // Envoi non-bloquant : si pas de four configuré → noop silencieux
-    void enqueueFourTicket({
+    // ── Ticket Four/Cuisine (kitchen) ─────────────────────────────────────────
+    // On ATTEND que le job soit inséré dans Supabase (pas la connexion BT).
+    // Le wake du worker est déclenché à l'intérieur de enqueueFourTicket,
+    // immédiatement après le INSERT — pas de délai côté impression.
+    const fourResult = await enqueueFourTicket({
       tableId,
       orderLabel: tableNumber,
       items,
       isTable: !isEmporter,
       ...(orderPhone ? { orderNote: orderPhone } : {}),
       printers: getPrintersFromStore(),
-    }).then((result) => {
-      if (result.status === "enqueued") {
-        console.log("[FOUR] Ticket four enfilé :", result.jobId);
-      } else if (result.status === "noop" && result.reason !== "no_printer") {
-        console.log("[FOUR] Noop four :", result.reason);
-      }
     });
 
+    if (fourResult.status === "enqueued") {
+      console.log("[FOUR] Ticket four enfilé :", fourResult.jobId);
+    } else if (fourResult.status === "error") {
+      // L'insertion a échoué — on prévient mais on ne bloque pas la commande
+      console.error("[FOUR] Erreur insertion job :", fourResult.message);
+      toast.error("Ticket cuisine non créé", {
+        description: fourResult.message,
+        duration: 5000,
+      });
+    } else if (fourResult.status === "noop") {
+      if (fourResult.reason === "no_printer") {
+        console.warn("[FOUR] Aucune imprimante cuisine (four/cuisine) configurée avec une adresse MAC.");
+      } else {
+        console.log("[FOUR] Noop four :", fourResult.reason);
+      }
+    }
+
+    // ── Sauvegarde commande (indépendant de l'impression) ─────────────────────
     // Flush immédiat vers Supabase
     await flushOrder(tableId);
 

@@ -2,11 +2,15 @@ import { useEffect, useCallback } from "react";
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
 
-/** Two-printer POS — Caisse (receipts) + Four (kitchen). */
+/** Two-printer POS — Caisse (receipts) + Four/Cuisine (kitchen). */
 export type PrinterType = "caisse" | "four";
 
+/**
+ * Normalize raw DB type to the two canonical app types.
+ * 'cuisine' is a migration alias for 'four' — treat them identically.
+ */
 export function normalizePrinterType(raw: unknown): PrinterType {
-  if (raw === "four") return "four";
+  if (raw === "four" || raw === "cuisine") return "four";
   return "caisse";
 }
 
@@ -49,7 +53,8 @@ async function fetchPrintersFromDB(): Promise<Printer[]> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? [])
-    .filter((row: any) => row["type"] === "caisse" || row["type"] === "four")
+    // 'cuisine' is a SQL-migration alias for 'four' — keep both
+    .filter((row: any) => row["type"] === "caisse" || row["type"] === "four" || row["type"] === "cuisine")
     .map((row: any) => ({
       id: row["id"] as string,
       name: row["name"] as string,

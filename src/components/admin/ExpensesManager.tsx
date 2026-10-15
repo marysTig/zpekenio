@@ -5,7 +5,7 @@ import {
   Trash2,
   Calendar,
   Search,
-  Printer,
+
   TrendingDown,
   Clock,
   User,
@@ -216,10 +216,6 @@ export function ExpensesManager() {
     }
   };
 
-  // Printable Summary
-  const handlePrint = () => {
-    window.print();
-  };
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background p-3 sm:p-4 md:p-6 font-sans">
@@ -238,16 +234,6 @@ export function ExpensesManager() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
-            title="Imprimer le récapitulatif"
-          >
-            <Printer className="h-4 w-4 text-muted-foreground" />
-            <span className="hidden sm:inline">Imprimer</span>
-          </button>
-
           {filteredExpenses.length > 0 && (
             <button
               type="button"
