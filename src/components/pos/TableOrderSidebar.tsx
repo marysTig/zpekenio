@@ -664,6 +664,23 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   };
 
   const handleValidateOrder = async () => {
+    // ── Ticket Four (cuisine) — lancé en premier, sans attendre les écritures ──
+    // Envoi non-bloquant : si pas de four configuré → noop silencieux
+    void enqueueFourTicket({
+      tableId,
+      orderLabel: tableNumber,
+      items,
+      isTable: !isEmporter,
+      ...(orderPhone ? { orderNote: orderPhone } : {}),
+      printers: getPrintersFromStore(),
+    }).then((result) => {
+      if (result.status === "enqueued") {
+        console.log("[FOUR] Ticket four enfilé :", result.jobId);
+      } else if (result.status === "noop" && result.reason !== "no_printer") {
+        console.log("[FOUR] Noop four :", result.reason);
+      }
+    });
+
     // Flush immédiat vers Supabase
     await flushOrder(tableId);
 
@@ -683,38 +700,9 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       }
     }
 
-    // ── Ticket Four (cuisine) ─────────────────────────────────────
-    // Envoi non-bloquant : si pas de four configuré → noop silencieux
-    void enqueueFourTicket({
-      tableId,
-      orderLabel: tableNumber,
-      items,
-      isTable: !isEmporter,
-      ...(orderPhone ? { orderNote: orderPhone } : {}),
-      printers: getPrintersFromStore(),
-    }).then((result) => {
-      if (result.status === "enqueued") {
-        console.log("[FOUR] Ticket four enfilé :", result.jobId);
-      } else if (result.status === "noop" && result.reason !== "no_printer") {
-        console.log("[FOUR] Noop four :", result.reason);
-      }
-    });
+    // ── Pas d'impression caisse ici — le reçu est émis à l'encaissement ──
 
-    // ── Ticket Caisse (reçu de commande) ─────────────────────────
-    const orderLabel = isEmporter
-      ? `À EMPORTER — Commande #${tableNumber}`
-      : `SUR PLACE — Ticket #${tableNumber}`;
-    await runCashierReceiptPrint({
-      printers,
-      items,
-      total,
-      label: orderLabel,
-      globalSupplements: activeSupplements,
-      tableId,
-      phone: orderPhone,
-    });
-
-    toast.success(isOccupied ? "Commande mise à jour" : "Commande enregistrée — ticket imprimé");
+    toast.success(isOccupied ? "Commande mise à jour" : "Commande enregistrée");
     onClose();
   };
 
