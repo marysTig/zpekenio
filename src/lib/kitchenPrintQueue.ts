@@ -170,6 +170,8 @@ export type EnqueueFourParams = {
   orderNote?: string;
   checkoutTs?: number;
   printers?: Printer[];
+  /** Diagnostic correlation ID from the UI layer. */
+  _correlationId?: string;
 };
 
 /**
@@ -182,16 +184,40 @@ export type EnqueueFourParams = {
 export async function enqueueFourTicket(
   params: EnqueueFourParams,
 ): Promise<EnqueueFourResult> {
+  const t0 = Date.now();
+  const corr = params._correlationId ?? `nocorr-${t0}`;
+
+  // ─── TRACE: enqueue_start ─────────────────────────────────────────────────
+  console.log(
+    `[PRINT TRACE] t=${t0} event=enqueue_start corr=${corr}` +
+    ` tableId=${params.tableId.slice(0, 8)} label=${params.orderLabel}` +
+    ` isTable=${params.isTable} items=${params.items.length}`
+  );
+
   const printers = params.printers ?? getPrintersFromStore();
+
+  // ─── TRACE: printer_lookup ────────────────────────────────────────────────
+  const allPrinters = printers.map(p => `${p.name}(type=${p.type},enabled=${p.enabled},mac=${p.mac_address ? p.mac_address.slice(-5) : "none"})`).join(" | ");
+  console.log(`[PRINT TRACE] t=${Date.now()} event=printer_lookup corr=${corr} printers=[${allPrinters}]`);
+
   const four = printers.find(
     (p) => p.enabled && p.type === "four" && (p.mac_address || "").trim() !== "",
   );
+
   if (!four) {
+    console.warn(`[PRINT TRACE] t=${Date.now()} event=no_printer corr=${corr} reason=no_enabled_four_with_mac`);
     return { status: "noop", reason: "no_printer" };
   }
 
   const mac = four.mac_address!.trim();
+  const maskedMac = mac.length > 5 ? `**:**:**:**:${mac.slice(-5)}` : "**";
+  console.log(
+    `[PRINT TRACE] t=${Date.now()} event=printer_found corr=${corr}` +
+    ` printer=${four.name} mac=${maskedMac} id=${four.id.slice(0, 8)}`
+  );
 
+  // ─── TRACE: payload_build_start ───────────────────────────────────────────
+  const tPayload0 = Date.now();
   const escpos = buildFourTicket({
     items: params.items,
     orderLabel: params.orderLabel,
@@ -199,8 +225,13 @@ export async function enqueueFourTicket(
     allowedCategoryIds: four.category_ids ?? [],
     ...(params.orderNote ? { orderNote: params.orderNote } : {}),
   });
+  console.log(
+    `[PRINT TRACE] t=${Date.now()} dt=${Date.now() - tPayload0}ms event=payload_built corr=${corr}` +
+    ` bytes=${escpos ? escpos.length : 0}`
+  );
 
   if (!escpos) {
+    console.warn(`[PRINT TRACE] t=${Date.now()} event=no_items corr=${corr}`);
     // No items match the category filter
     return { status: "noop", reason: "no_items" };
   }
@@ -218,6 +249,13 @@ export async function enqueueFourTicket(
     tableId: tableIdForDb ?? String(params.orderLabel),
     orderLabel: params.orderLabel,
   };
+
+  // ─── TRACE: supabase_insert_start ─────────────────────────────────────────
+  const tInsert0 = Date.now();
+  console.log(
+    `[PRINT TRACE] t=${tInsert0} event=supabase_insert_start corr=${corr}` +
+    ` key=${idempotencyKey} printer=${four.name} mac=${maskedMac}`
+  );
 
   const { data, error } = await supabase
     .from("print_jobs")
@@ -238,8 +276,16 @@ export async function enqueueFourTicket(
     .select("id")
     .maybeSingle();
 
+  // ─── TRACE: supabase_insert_done ──────────────────────────────────────────
+  const tInsertDone = Date.now();
+  console.log(
+    `[PRINT TRACE] t=${tInsertDone} dt=${tInsertDone - tInsert0}ms event=supabase_insert_done corr=${corr}` +
+    ` jobId=${data?.id ?? "null"} error=${error ? error.code + ":" + error.message : "none"}`
+  );
+
   if (error) {
     if (error.code === "23505") {
+      console.log(`[PRINT TRACE] t=${Date.now()} event=duplicate corr=${corr}`);
       return { status: "noop", reason: "duplicate" };
     }
     console.error("[print_jobs] four enqueue error:", error.message);
@@ -249,9 +295,16 @@ export async function enqueueFourTicket(
 
   // Wake the JS daemon so the kitchen job is drained immediately
   // (the native Android worker only handles receipt jobs)
+  const tWake0 = Date.now();
+  console.log(`[PRINT TRACE] t=${tWake0} event=wake_daemon_start corr=${corr} jobId=${data?.id}`);
   const { wakePrintQueueDaemon } = await import("@/lib/printQueueDaemon");
   wakePrintQueueDaemon();
+  console.log(`[PRINT TRACE] t=${Date.now()} dt=${Date.now() - tWake0}ms event=wake_daemon_done corr=${corr}`);
 
+  console.log(
+    `[PRINT TRACE] t=${Date.now()} dt_total=${Date.now() - t0}ms event=enqueue_complete corr=${corr}` +
+    ` jobId=${data?.id}`
+  );
   return { status: "enqueued", jobId: (data?.id as string) ?? "" };
 }
 

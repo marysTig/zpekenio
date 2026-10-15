@@ -60,6 +60,18 @@ class EscPosBluetoothPrinter {
     Thread.sleep(gap)
   }
 
+  /** Returns true if a cooldown was applied. */
+  private fun applyMacCooldownWithTrace(nextMac: String, isReceipt: Boolean, tRef: Long): Boolean {
+    val prev = lastSuccessMac?.let { normalizeMac(it) }
+    val next = normalizeMac(nextMac)
+    if (prev.isNullOrBlank() || prev == next) return false
+    val gap = if (isReceipt) RECEIPT_MAC_COOLDOWN_MS else INTER_PRINTER_GAP_MS
+    Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} event=mac_cooldown_start gap=${gap}ms")
+    Log.i(TAG, "MAC cooldown ${gap}ms · $prev → $next")
+    Thread.sleep(gap)
+    return true
+  }
+
   @SuppressLint("MissingPermission")
   fun sendEscPos(
     printerName: String,
@@ -76,9 +88,19 @@ class EscPosBluetoothPrinter {
       throw IOException("Le Bluetooth est désactivé sur la tablette !")
     }
 
-    applyMacCooldown(mac, isReceipt)
+    val tStart = System.currentTimeMillis()
+    val maskedMac = if (mac.length > 5) "**:**:**:**:${mac.takeLast(5)}" else "**"
+    Log.i(TAG, "[PRINT TRACE] t=$tStart event=bt_send_start printer=$printerName mac=$maskedMac isReceipt=$isReceipt")
+
+    if (applyMacCooldownWithTrace(mac, isReceipt, tStart)) {
+      Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} dt=${System.currentTimeMillis() - tStart}ms event=mac_cooldown_done printer=$printerName")
+    }
+
     if (radioNeedsSettle) {
+      val tSettle0 = System.currentTimeMillis()
+      Log.i(TAG, "[PRINT TRACE] t=$tSettle0 event=hard_settle_start printer=$printerName")
       hardSettle("pre-connect:$printerName")
+      Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} dt=${System.currentTimeMillis() - tSettle0}ms event=hard_settle_done printer=$printerName")
     } else {
       // Soft close only — do not mark settle-needed for a clean handoff.
       try {
@@ -98,16 +120,24 @@ class EscPosBluetoothPrinter {
       throw IOException("MAC invalide: $mac", e)
     }
 
+    val tConnect0 = System.currentTimeMillis()
+    Log.i(TAG, "[PRINT TRACE] t=$tConnect0 event=connect_start printer=$printerName mac=$maskedMac")
     Log.i(TAG, "CONNECT START · $printerName · $mac")
     val socket = connectEscPos(device, printerName)
     socketRef.set(socket)
+    val tConnected = System.currentTimeMillis()
+    Log.i(TAG, "[PRINT TRACE] t=$tConnected dt=${tConnected - tConnect0}ms event=connected printer=$printerName")
 
     try {
       Log.i(TAG, "CONNECTED · $printerName")
       val out = socket.outputStream
+      val tSend0 = System.currentTimeMillis()
+      Log.i(TAG, "[PRINT TRACE] t=$tSend0 event=send_start printer=$printerName bytes=${raw.size}")
       out.write(raw)
       out.flush()
+      val tSendDone = System.currentTimeMillis()
       Log.i(TAG, "SEND COMPLETE · $printerName · bytes=${raw.size}")
+      Log.i(TAG, "[PRINT TRACE] t=$tSendDone dt=${tSendDone - tSend0}ms event=send_complete printer=$printerName bytes=${raw.size}")
       if (!isReceipt) {
         Thread.sleep(PRE_DISCONNECT_DRAIN_MS)
       }
@@ -119,6 +149,7 @@ class EscPosBluetoothPrinter {
       }
       socketRef.compareAndSet(socket, null)
       Log.i(TAG, "DISCONNECTED · $printerName")
+      Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} dt_total=${System.currentTimeMillis() - tStart}ms event=disconnected printer=$printerName")
     }
 
     lastSuccessMac = mac

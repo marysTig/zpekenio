@@ -24,6 +24,7 @@ import { useGlobalSupplementsStore, reloadGlobalSupplements, type GlobalSuppleme
 import { playAddSound, playCashSound } from "@/lib/posSounds";
 import { enqueueFourTicket } from "@/lib/kitchenPrintQueue";
 import { getPrintersFromStore } from "@/lib/printerStore";
+import { getLocalPrintDeviceId } from "@/lib/printDevice";
 
 type TableOrderSidebarProps = {
   tableId: string;
@@ -664,6 +665,23 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
   };
 
   const handleValidateOrder = async () => {
+    // ─── DIAGNOSTIC TRACE ──────────────────────────────────────────────────────
+    const traceTs = Date.now();
+    const correlationId = `${tableId.slice(0, 8)}-${traceTs}`;
+    const deviceId = getLocalPrintDeviceId();
+    const { isNativePrintWorkerActive } = await import("@/lib/hubPrintWorkerPlugin");
+    const { isLocalDevicePrimaryHub } = await import("@/lib/printSettingsStore");
+    console.log(
+      `[PRINT TRACE] t=${traceTs} event=click_commander` +
+      ` corr=${correlationId}` +
+      ` table=${tableId.slice(0, 8)} label=${tableNumber}` +
+      ` isTable=${!isEmporter} deviceId=${deviceId.slice(0, 12)}` +
+      ` isPrimaryHub=${isLocalDevicePrimaryHub()}` +
+      ` nativeWorkerActive=${isNativePrintWorkerActive()}` +
+      ` itemCount=${items.length}`
+    );
+    // ──────────────────────────────────────────────────────────────────────────
+
     // ── Ticket Four/Cuisine (kitchen) ─────────────────────────────────────────
     // On ATTEND que le job soit inséré dans Supabase (pas la connexion BT).
     // Le wake du worker est déclenché à l'intérieur de enqueueFourTicket,
@@ -675,7 +693,19 @@ export function TableOrderSidebar({ tableId, tableNumber, mergedIds, onClose }: 
       isTable: !isEmporter,
       ...(orderPhone ? { orderNote: orderPhone } : {}),
       printers: getPrintersFromStore(),
+      _correlationId: correlationId,
     });
+
+    // ─── DIAGNOSTIC TRACE ──────────────────────────────────────────────────────
+    console.log(
+      `[PRINT TRACE] t=${Date.now()} dt=${Date.now() - traceTs}ms event=enqueue_result` +
+      ` corr=${correlationId}` +
+      ` status=${fourResult.status}` +
+      ` ${"jobId" in fourResult ? `jobId=${fourResult.jobId}` : ""}` +
+      ` ${"reason" in fourResult ? `reason=${fourResult.reason}` : ""}` +
+      ` ${"message" in fourResult ? `error=${fourResult.message}` : ""}`
+    );
+    // ──────────────────────────────────────────────────────────────────────────
 
     if (fourResult.status === "enqueued") {
       console.log("[FOUR] Ticket four enfilé :", fourResult.jobId);

@@ -51,10 +51,14 @@ function notifyDrain() {
 /** Called when a new pending job arrives (realtime or after enqueue). */
 export function wakePrintQueueDaemon() {
   // Always wake the JS drain loop (handles kitchen/four jobs on ALL platforms)
+  console.log(`[PRINT TRACE] t=${Date.now()} event=wake_daemon_received nativeActive=${isNativePrintWorkerActive()}`);
   notifyDrain();
   // Also wake the native worker if it's active (handles receipt/caisse jobs on Android)
   if (isNativePrintWorkerActive()) {
-    void wakeNativePrintWorker();
+    console.log(`[PRINT TRACE] t=${Date.now()} event=wake_native_start`);
+    void wakeNativePrintWorker().then(() => {
+      console.log(`[PRINT TRACE] t=${Date.now()} event=wake_native_done`);
+    });
   }
 }
 
@@ -122,6 +126,14 @@ async function sendJobBytesWithWatchdog(
 async function processJob(job: PrintJob): Promise<void> {
   // kitchen = four printer ticket ; receipt = caisse ticket
   // Both use the same ESC/POS Bluetooth path.
+  const tProcess0 = Date.now();
+  console.log(
+    `[PRINT TRACE] t=${tProcess0} event=process_job_start` +
+    ` jobId=${job.id} jobType=${job.job_type} printer=${job.printer_name}` +
+    ` mac=${job.mac_address ? "**:" + job.mac_address.slice(-5) : "none"}` +
+    ` attempt=${job.attempt_count + 1} status=${job.status}`
+  );
+
   if (job.job_type !== "receipt" && job.job_type !== "kitchen") {
     // Unknown job type — cancel to avoid infinite loop
     await cancelLegacyKitchenJobs();
@@ -278,13 +290,23 @@ export function startPrintQueueDaemon(): () => void {
           await reclaimStalePrintingJobs(getLocalPrintDeviceId());
 
           while (!stopped && isLocalDevicePrimaryHub() && !isNativePrintWorkerActive()) {
+            const tClaim0 = Date.now();
+            console.log(`[PRINT TRACE] t=${tClaim0} event=claim_attempt`);
             const job = await claimNextPrintJob();
-            if (!job) break;
+            if (!job) {
+              console.log(`[PRINT TRACE] t=${Date.now()} dt=${Date.now() - tClaim0}ms event=claim_empty`);
+              break;
+            }
+            console.log(
+              `[PRINT TRACE] t=${Date.now()} dt=${Date.now() - tClaim0}ms event=claim_success` +
+              ` jobId=${job.id} jobType=${job.job_type} printer=${job.printer_name}`
+            );
             if (isNativePrintWorkerActive()) {
               await requeueInterruptedJob(job.id);
               break;
             }
             await processJob(job);
+            console.log(`[PRINT TRACE] t=${Date.now()} event=process_job_done jobId=${job.id}`);
           }
         }
       } catch (e) {

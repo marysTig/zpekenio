@@ -161,12 +161,19 @@ class PrintWorkerLoop(
       try {
         drainAdminOps()
         repo.reclaimStalePrinting()
+        val tClaim0 = System.currentTimeMillis()
+        Log.d(TAG, "[PRINT TRACE] t=$tClaim0 event=claim_attempt")
         val job = repo.claimNext()
         if (job == null) {
+          Log.d(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} dt=${System.currentTimeMillis() - tClaim0}ms event=claim_empty")
           onStatus(true, 0, lastError.get())
           sleepInterruptible(POLL_IDLE_MS)
           continue
         }
+        Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} dt=${System.currentTimeMillis() - tClaim0}ms event=claim_success" +
+          " jobId=${job.id} jobType=${job.jobType} printer=${job.printerName}" +
+          " mac=${job.macAddress?.takeLast(5)?.let { "**:$it" } ?: "none"}" +
+          " attempt=${job.attemptCount + 1}")
         onStatus(true, repo.countActiveJobs() + 1, lastError.get())
         processJob(job)
         drainAdminOps()
@@ -188,6 +195,11 @@ class PrintWorkerLoop(
     val mac = job.macAddress
     val b64 = job.escposBase64
     val isReceipt = job.jobType == "receipt"
+    val tProcess0 = System.currentTimeMillis()
+    Log.i(TAG, "[PRINT TRACE] t=$tProcess0 event=process_job_start" +
+      " jobId=${job.id} jobType=${job.jobType} printer=$name" +
+      " mac=${mac?.takeLast(5)?.let { "**:$it" } ?: "none"}" +
+      " attempt=${job.attemptCount + 1}")
     Log.i(TAG, "PRINT START · ${job.jobType} → $name")
 
     if (mac.isNullOrBlank() || b64.isNullOrBlank()) {
@@ -204,12 +216,18 @@ class PrintWorkerLoop(
       //   receipt=true  → RECEIPT_MAC_COOLDOWN_MS, no drain delay
       //   receipt=false → INTER_PRINTER_GAP_MS, PRE_DISCONNECT_DRAIN_MS delay
       printer.sendEscPos(name, mac, b64, isReceipt = isReceipt)
+      val tDone = System.currentTimeMillis()
       repo.markDone(job.id)
+      Log.i(TAG, "[PRINT TRACE] t=$tDone dt=${tDone - tProcess0}ms event=mark_done" +
+        " jobId=${job.id} jobType=${job.jobType} printer=$name")
       lastError.set(null)
       Log.i(TAG, "PRINT END OK · ${job.jobType} · $name")
+      Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} event=process_job_done jobId=${job.id}")
     } catch (e: Exception) {
       val msg = e.message ?: "Erreur impression"
       Log.e(TAG, "PRINT FAIL · ${job.jobType} · $name · $msg", e)
+      Log.e(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} event=process_job_fail" +
+        " jobId=${job.id} error=$msg")
       lastError.set(msg)
       try {
         printer.hardSettle("job-fail:$name")
