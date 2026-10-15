@@ -44,7 +44,8 @@ class PrintWorkerLoop(
 
   fun start() {
     if (!running.compareAndSet(false, true)) return
-    printer.forceClose("loop-start")
+    // Do NOT forceClose here — a live session from a previous job should survive.
+    // The session is closed explicitly in stop() or on print failure.
     val exec = Executors.newSingleThreadExecutor { r ->
       Thread(r, "HubPrintWorker").apply { isDaemon = true }
     }
@@ -223,6 +224,7 @@ class PrintWorkerLoop(
       lastError.set(null)
       Log.i(TAG, "PRINT END OK · ${job.jobType} · $name")
       Log.i(TAG, "[PRINT TRACE] t=${System.currentTimeMillis()} event=process_job_done jobId=${job.id}")
+      // Session intentionally left open — next ticket reuses it.
     } catch (e: Exception) {
       val msg = e.message ?: "Erreur impression"
       Log.e(TAG, "PRINT FAIL · ${job.jobType} · $name · $msg", e)
