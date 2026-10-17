@@ -65,9 +65,11 @@ export function decodeNoteAndPhone(raw: string): { phone: string; note: string }
 
 function scheduleUpsert(tableId: string, items: CartItem[], note: string, globalSupplements: GlobalSupplement[]) {
   clearTimeout(upsertTimers[tableId]);
-  // Mark this table as locally-written so we can ignore the Realtime echo
+  // Mark immediately so any incoming Realtime event during the debounce is blocked
   localWriteTimestamps[tableId] = Date.now();
   upsertTimers[tableId] = setTimeout(async () => {
+    // Refresh at write-fire time (debounce gap is now covered)
+    localWriteTimestamps[tableId] = Date.now();
     const { error } = await supabase.from("table_orders").upsert(
       { 
         table_id: tableId, 
@@ -78,6 +80,8 @@ function scheduleUpsert(tableId: string, items: CartItem[], note: string, global
       },
       { onConflict: "table_id" },
     );
+    // Refresh again after write completes — the Realtime echo is now in-flight
+    localWriteTimestamps[tableId] = Date.now();
     if (error) console.error("[table_orders] upsert error:", error.message);
   }, 300);
 }
@@ -170,6 +174,8 @@ export const useTableOrdersStore = create<TableOrdersState>((set, get) => ({
     const note = get().orderNotes[tableId] ?? "";
     const phone = get().orderPhones[tableId] ?? "";
     const supplements = get().orderSupplements[tableId] ?? [];
+    // Block Realtime echo for this direct write too
+    localWriteTimestamps[tableId] = Date.now();
     const { error } = await supabase.from("table_orders").upsert(
       { 
         table_id: tableId, 
@@ -180,6 +186,8 @@ export const useTableOrdersStore = create<TableOrdersState>((set, get) => ({
       },
       { onConflict: "table_id" },
     );
+    // Refresh after write completes so echo is still blocked
+    localWriteTimestamps[tableId] = Date.now();
     if (error) console.error("[table_orders] flushOrder error:", error.message);
   },
 
@@ -288,9 +296,9 @@ function handleTableOrderPayload(payload: PostgresPayload): void {
     const row = payload.new as any;
     const tableId = row.table_id as string;
 
-    // Ignore Realtime echo for 2 seconds after a local write
+    // Ignore Realtime echo for 4 seconds after a local write completes
     const lastWrite = localWriteTimestamps[tableId];
-    if (lastWrite && Date.now() - lastWrite < 2000) {
+    if (lastWrite && Date.now() - lastWrite < 4000) {
       return;
     }
 

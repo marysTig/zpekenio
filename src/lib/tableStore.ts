@@ -215,10 +215,18 @@ export function useTableStore() {
   // ── CRUD Salles ─────────────────────────────────────────────────
 
   const addRoom = async (name: string) => {
-    const { data, error } = await supabase.from("rooms").insert({ name }).select().single();
-    if (error) throw new Error(error.message);
-    await reload();
-    return data.id as string;
+    // Optimistic: generate UUID client-side so the caller gets an ID instantly
+    const id = crypto.randomUUID();
+    const { setRooms: _setRooms } = useTableGlobalState.getState();
+    _setRooms([...useTableGlobalState.getState().rooms, { id, name }]);
+
+    const { error } = await supabase.from("rooms").insert({ id, name });
+    if (error) {
+      // Rollback optimistic entry
+      _setRooms(useTableGlobalState.getState().rooms.filter((r) => r.id !== id));
+      throw new Error(error.message);
+    }
+    return id;
   };
 
   const deleteRoom = async (id: string) => {
@@ -230,17 +238,27 @@ export function useTableStore() {
   // ── CRUD Tables ─────────────────────────────────────────────────
 
   const addTable = async (table: Omit<TableItem, "id">) => {
+    // Optimistic: generate UUID client-side so sidebar opens immediately
+    const id = crypto.randomUUID();
+    const optimisticTable: TableItem = { ...table, id };
+    setTables((prev) => [...prev, optimisticTable].sort((a, b) => a.number - b.number));
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const insertPayload: Record<string, any> = {
+      id,
       number: table.number,
       status: table.status,
     };
     if (table.seats !== undefined) insertPayload["seats"] = table.seats;
     if (table.roomId) insertPayload["room_id"] = table.roomId;
-    const { data, error } = await supabase.from("tables").insert(insertPayload).select().single();
-    if (error) throw new Error(error.message);
-    await reload();
-    return data.id as string;
+
+    const { error } = await supabase.from("tables").insert(insertPayload);
+    if (error) {
+      // Rollback optimistic entry
+      setTables((prev) => prev.filter((t) => t.id !== id));
+      throw new Error(error.message);
+    }
+    return id;
   };
 
   const updateTable = async (id: string, table: Partial<TableItem>) => {
