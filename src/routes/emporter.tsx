@@ -36,6 +36,7 @@ export const Route = createFileRoute("/emporter")({
 function EmporterPage() {
   const { tables: tableData, loading, updateTable, rooms, addRoom, addTable } = useTableStore();
   const { orders, orderNotes, orderSupplements, clearOrder, _patchOrder, _patchNote, _patchSupplements } = useTableOrdersStore();
+  const clearOrderRef = clearOrder;
   const { printers } = usePrinterStore();
   const currentUser = useSessionStore(s => s.currentUser);
 
@@ -133,6 +134,9 @@ function EmporterPage() {
 
       if (freeTable) {
         // Réutiliser le slot libre sans le marquer occupé — la validation le fera
+        // ⚠️ On efface d'abord toute commande résiduelle pour éviter que les anciens
+        // produits réapparaissent dans la sidebar (race condition après encaissement).
+        clearOrderRef(freeTable.id);
         targetTableId = freeTable.id;
         targetTableNumber = freeTable.number;
       } else {
